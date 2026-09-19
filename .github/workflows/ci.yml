@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: pruebas (py${{ matrix.python-version }}, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        python-version: ["3.11", "3.12", "3.13"]
+        include:
+          - os: macos-latest
+            python-version: "3.12"
+          - os: windows-latest
+            python-version: "3.12"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Instalar el paquete y las herramientas de desarrollo
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Análisis estático
+        run: ruff check zipaes tests
+
+      - name: Verificación de formato
+        run: ruff format --check zipaes tests
+
+      - name: Pruebas
+        run: pytest -q
+
+      - name: Autocomprobación en todas las variantes
+        run: |
+          python -m zipaes.cli selftest
+          python -m zipaes.cli selftest --ae1
+          python -m zipaes.cli selftest --deflate
+          python -m zipaes.cli selftest --fuerza 1
+          python -m zipaes.cli selftest --fuerza 2
+
+  interoperabilidad:
+    name: interoperabilidad con 7-Zip
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Instalar 7-Zip
+        run: sudo apt-get update && sudo apt-get install -y p7zip-full
+      - run: pip install -e ".[dev]"
+      - name: Verificar que leemos lo que escribe 7-Zip, y al revés
+        run: pytest tests/test_selftest.py -q -k "7z or 7z_"

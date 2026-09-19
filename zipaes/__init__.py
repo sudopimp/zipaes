@@ -19,7 +19,7 @@ que tengas autorización explícita. Ver ``docs/ETICA-Y-LEGAL.md``.
 
 from __future__ import annotations
 
-__version__ = "1.1.0"
+__version__ = "1.1.1"
 
 from .candidates import (  # noqa: E402
     MarkovModel,
@@ -45,7 +45,9 @@ from .format import (  # noqa: E402
     ArchiveReport,
     NotAesError,
     NotEncryptedError,
+    UnsupportedZipError,
     detect_zip64,
+    has_zip64_extra,
     inspect,
     looks_like_zip,
     parse_entry,
@@ -68,8 +70,10 @@ __all__ = [
     "parse_entry",
     "looks_like_zip",
     "detect_zip64",
+    "has_zip64_extra",
     "NotAesError",
     "NotEncryptedError",
+    "UnsupportedZipError",
     # cripto AES
     "derive_keys",
     "keystream",

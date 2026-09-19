@@ -139,22 +139,42 @@ def detect_tools(extra_paths: list[str] | None = None) -> dict[str, Tool]:
     return detectadas
 
 
+def _normalizar_hash(linea: str) -> tuple[str, ...] | None:
+    """Normaliza un hash ``$zip2$`` para poder compararlo.
+
+    El campo del valor de verificación (posición 5) se compara **numéricamente**: hashcat
+    lo reescribe sin ceros a la izquierda al volcar el resultado al potfile (issue #4200),
+    así que una comparación literal falla en aproximadamente uno de cada dieciséis hashes
+    —los que tienen un `0` inicial en ese campo.
+    """
+    if not linea.startswith("$zip2$"):
+        return None
+    campos = linea.split("*")
+    if len(campos) != 10:
+        return None
+    campos[5] = str(int(campos[5], 16)) if campos[5] else ""
+    return tuple(campos)
+
+
 def _leer_potfile(path: str, hash_line: str) -> str | None:
-    """Extrae la contraseña del potfile para un hash dado."""
+    """Extrae la contraseña del potfile para un hash dado.
+
+    La comparación es tolerante a la normalización de hashcat (ver ``_normalizar_hash``).
+    """
     if not os.path.isfile(path):
         return None
+    buscado = _normalizar_hash(hash_line)
     with open(path, encoding="utf-8", errors="ignore") as handle:
         for line in handle:
             line = line.rstrip("\n")
-            if not line:
+            if not line or ":" not in line:
                 continue
             # el hash no contiene ":", así que la primera separación es la buena
-            if line.startswith(hash_line + ":"):
-                return line[len(hash_line) + 1 :]
-            if ":" in line:
-                posible_hash, posible_clave = line.split(":", 1)
-                if posible_hash == hash_line:
-                    return posible_clave
+            posible_hash, posible_clave = line.split(":", 1)
+            if posible_hash == hash_line:
+                return posible_clave
+            if buscado is not None and _normalizar_hash(posible_hash) == buscado:
+                return posible_clave
     return None
 
 

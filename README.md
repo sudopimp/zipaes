@@ -9,7 +9,7 @@ AES (WinZip AE-1 / AE-2) y ZipCrypto, con hashcat y John the Ripper integrados.
 [![CI](https://github.com/sudopimp/zipaes/actions/workflows/ci.yml/badge.svg)](https://github.com/sudopimp/zipaes/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![Licencia](https://img.shields.io/badge/licencia-MIT-green)
-![Tests](https://img.shields.io/badge/tests-182-brightgreen)
+![Tests](https://img.shields.io/badge/tests-189-brightgreen)
 
 </div>
 
@@ -322,7 +322,7 @@ zipaes/
   selftest.py    autocomprobación de punta a punta
   testkit.py     escritor de zips AES para fixtures de prueba
   cli.py         interfaz de línea de comandos
-tests/           182 pruebas con pytest
+tests/           189 pruebas con pytest
 docs/            metodología, formato, ética y preguntas frecuentes
 ```
 
@@ -332,14 +332,15 @@ docs/            metodología, formato, ética y preguntas frecuentes
 make check    # ruff check + ruff format --check + pytest
 ```
 
-- **182 tests**, todos en verde, sin red ni servicios externos.
+- **189 tests**, todos en verde, sin red ni servicios externos.
 - **Interoperabilidad real**: las pruebas crean archivos con **7-Zip** y con **Info-ZIP** y
   los abren con este paquete, y verifican que 7-Zip acepte lo que el kit de pruebas escribe.
   No se valida contra sí mismo.
 - **Fuzzing del parser**: 300 mutaciones deterministas por formato (bit flips, truncados,
   tamaños absurdos) que exigen que el parser no reviente con excepciones que delaten un
   descuido, y que respete los invariantes del formato cuando el parseo tiene éxito.
-- **Integración real con hashcat**: se activa sola si el binario está presente.
+- **Integración real con hashcat**, incluido el caso patológico que hashcat normaliza al
+  volcar el resultado: la prueba busca un salt que lo produzca, así no depende del azar.
 - `ruff` limpio. CI en Python 3.11/3.12/3.13 más macOS y Windows.
 
 ## Documentación

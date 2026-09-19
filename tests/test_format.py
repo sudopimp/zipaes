@@ -11,6 +11,7 @@ from zipaes.format import (
     AUTH_CODE_LEN,
     NotAesError,
     NotEncryptedError,
+    has_zip64_extra,
     salt_len_for,
 )
 
@@ -97,3 +98,34 @@ def test_looks_like_zip(tmp_path, zip_aes256):
 def test_detecta_el_metodo_de_compresion(zip_deflate):
     entry = inspect(zip_deflate).aes[0]
     assert entry.compression == 8
+
+
+# --- ZIP64 ----------------------------------------------------------------- #
+
+
+def test_has_zip64_extra_detecta_el_extra_field():
+    import struct
+
+    info = zipfile.ZipInfo("x")
+    info.extra = struct.pack("<HH", 0x0001, 8) + b"\x00" * 8
+    assert has_zip64_extra(info)
+
+
+def test_has_zip64_extra_ignora_otros_extra_fields():
+    import struct
+
+    from zipaes.format import EXTRA_AES
+
+    info = zipfile.ZipInfo("x")
+    # el extra field de AES (0x9901) no debe confundirse con ZIP64
+    info.extra = struct.pack("<HH", EXTRA_AES, 7) + struct.pack("<H2sBH", 2, b"AE", 3, 0)
+    assert not has_zip64_extra(info)
+    info.extra = b""
+    assert not has_zip64_extra(info)
+
+
+def test_un_zip_normal_no_se_marca_como_zip64(zip_aes256):
+    report = inspect(zip_aes256)
+    assert report.zip64 is False
+    assert report.zip64_entries == 0
+    assert report.summary()["zip64_entradas"] == 0

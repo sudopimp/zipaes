@@ -3,6 +3,21 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado según [SemVer](https://semver.org/lang/es/).
 
+## [1.1.1] — 2026-09-19
+
+### Corregido
+
+- **El ataque con hashcat podía reportar "no encontrada" con la contraseña ya en el
+  potfile.** hashcat reescribe el campo del valor de verificación sin ceros a la izquierda
+  al volcar el resultado (issue #4200 del propio hashcat), así que la comparación literal
+  fallaba en aproximadamente uno de cada dieciséis hashes —justo los que tienen un `0`
+  inicial en ese campo, que son dos bytes al azar. Ahora la comparación normaliza ese campo
+  numéricamente. Se detectó porque el test de integración real era intermitente; la prueba
+  ahora busca un salt que produzca ese caso, así que lo cubre siempre.
+- `zip64_entries` en el informe: ZIP64 se detecta además por entrada, vía el extra field
+  `0x0001`, no sólo por el localizador al final del archivo. `UnsupportedZipError` y
+  `has_zip64_extra` se exportan.
+
 ## [1.1.0] — 2026-09-19
 
 Cierra las cuatro brechas identificadas en la revisión de 1.0.0: soporte de ZipCrypto,

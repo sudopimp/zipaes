@@ -137,6 +137,7 @@ class ArchiveReport:
     other_encrypted: list[str] = field(default_factory=list)
     zipcrypto_entries: list = field(default_factory=list)
     zip64: bool = False
+    zip64_entries: int = 0
 
     @property
     def encrypted(self) -> bool:
@@ -151,6 +152,7 @@ class ArchiveReport:
             "sin_cifrar": len(self.plain),
             "otros_cifrados": len(self.other_encrypted),
             "zip64": self.zip64,
+            "zip64_entradas": self.zip64_entries,
             "primera_entrada_aes": self.aes[0].name if self.aes else None,
             "primera_entrada_zipcrypto": self.zipcrypto[0] if self.zipcrypto else None,
         }
@@ -296,6 +298,9 @@ def inspect(path: str) -> ArchiveReport:
             if info.is_dir():
                 continue
             report.total += 1
+            if has_zip64_extra(info):
+                report.zip64_entries += 1
+                report.zip64 = True
             try:
                 report.aes.append(parse_entry(handle, info))
                 continue

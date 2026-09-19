@@ -129,6 +129,35 @@ def test_leer_potfile_sin_coincidencias(tmp_path):
     assert _leer_potfile(str(pot), "$zip2$...") is None
 
 
+def test_leer_potfile_tolera_el_campo_pv_sin_ceros(tmp_path):
+    """hashcat reescribe el valor de verificación sin ceros a la izquierda (issue #4200).
+
+    Ocurre en ~1 de cada 16 hashes, porque el campo son dos bytes al azar. Sin tolerarlo,
+    el ataque reporta "no encontrada" con la contraseña ya escrita en el potfile.
+    """
+    hash_line = f"$zip2$*0*3*0*{'ab' * 16}*0f81*9*6d42967b6a4d1ef5f7*{'cc' * 10}*$/zip2$"
+    reescrito = hash_line.replace("*0f81*", "*f81*")  # lo que hashcat vuelca
+    pot = tmp_path / "hc.pot"
+    pot.write_text(f"{reescrito}:la-clave\n", encoding="utf-8")
+    assert _leer_potfile(str(pot), hash_line) == "la-clave"
+
+
+def test_leer_potfile_tolera_ceros_en_cualquier_posicion_del_campo(tmp_path):
+    hash_line = f"$zip2$*0*3*0*{'ab' * 16}*00c3*9*6d42*{'cc' * 10}*$/zip2$"
+    pot = tmp_path / "hc.pot"
+    pot.write_text(f"{hash_line.replace('*00c3*', '*c3*')}:otra\n", encoding="utf-8")
+    assert _leer_potfile(str(pot), hash_line) == "otra"
+
+
+def test_leer_potfile_no_confunde_hashes_distintos(tmp_path):
+    """La tolerancia al pv no debe aceptar un hash que no corresponde."""
+    hash_line = f"$zip2$*0*3*0*{'ab' * 16}*0f81*9*6d42*{'cc' * 10}*$/zip2$"
+    otro = f"$zip2$*0*3*0*{'ff' * 16}*0f81*9*6d42*{'cc' * 10}*$/zip2$"
+    pot = tmp_path / "hc.pot"
+    pot.write_text(f"{otro}:no-es-esta\n", encoding="utf-8")
+    assert _leer_potfile(str(pot), hash_line) is None
+
+
 # --- orquestación de hashcat ----------------------------------------------- #
 
 
@@ -297,3 +326,53 @@ def test_integracion_real_con_hashcat(zip_objetivo, tmp_path, hashcat_real):
     from zipaes import verify
 
     assert verify(entry, clave)
+
+
+def _salt_con_pv_cero(password: str, strength: int = 3, limite: int = 5000) -> bytes:
+    """Busca un salt cuyo valor de verificación empiece con un byte nulo.
+
+    Es el caso que dispara el issue #4200 de hashcat: al volcar al potfile reescribe el
+    campo sin el cero inicial. Buscarlo hace que la prueba cubra ese camino **siempre**,
+    en lugar de depender de que el azar lo elija (uno de cada dieciséis hashes).
+    """
+    from zipaes.crypto import derive_keys
+    from zipaes.format import KEYLEN_BY_STRENGTH
+
+    keylen = KEYLEN_BY_STRENGTH[strength]
+    for semilla in range(limite):
+        salt = semilla.to_bytes(16, "big")
+        _, _, pv = derive_keys(password, salt, keylen, 2)
+        if pv[0] == 0:
+            return salt
+    raise AssertionError("no se encontró un salt con pv de cero inicial")
+
+
+def test_integracion_real_con_hashcat_pv_con_cero_inicial(tmp_path, hashcat_real):
+    """End-to-end del camino que rompía: hashcat reescribe el pv sin el cero."""
+    from zipaes import verify
+
+    salt = _salt_con_pv_cero("clave-objetivo")
+    ruta = str(tmp_path / "cero.zip")
+    write_aes_zip(ruta, {"a.txt": b"contenido"}, "clave-objetivo", salt=salt)
+    entry = inspect(ruta).aes[0]
+    assert entry.pv.hex().startswith("0"), "la fixture debe tener el pv con cero inicial"
+
+    lista = tmp_path / "lista.txt"
+    lista.write_text("uno\nclave-objetivo\n", encoding="utf-8")
+    clave = hashcat_attack(
+        entry,
+        wordlist=str(lista),
+        hashcat_path=hashcat_real,
+        workdir=str(tmp_path / "w"),
+        timeout=300,
+    )
+    assert clave == "clave-objetivo"
+    assert verify(entry, clave)
+
+    # y el potfile realmente trae el campo reescrito, que es lo que había que tolerar
+    pot = tmp_path / "w" / "hashcat.pot"
+    assert pot.is_file()
+    linea = pot.read_text(encoding="utf-8").strip()
+    assert not linea.startswith(emit_hash(entry) + ":"), (
+        "se esperaba que hashcat hubiera normalizado el pv"
+    )

@@ -26,6 +26,43 @@ def test_split_no_solapa():
     assert not set(train) & set(test)
 
 
+def test_la_ventana_de_cabeza_acota_de_donde_sale_el_test():
+    """El test tiene que salir de las contraseñas más frecuentes, no de todo el corpus."""
+    corpus = [f"p{i:04d}" for i in range(1000)]
+    ventana = 200
+    _, test = dataset.split(corpus, test_size=50, seed=3, ventana_cabeza=ventana)
+    assert set(test) <= set(corpus[:ventana])
+
+
+def test_la_ventana_de_cabeza_deja_toda_la_cola_en_train():
+    """La diferencia de fondo entre las dos métricas, dicha como propiedad.
+
+    Con ventana, el test sólo puede salir de la cabeza, así que **toda la cola queda en train**.
+    Sin ventana el test también saca de la cola, y esas contraseñas puntuales salen de train.
+    """
+    corpus = [f"p{i:04d}" for i in range(1000)]
+    train_uniforme, test_uniforme = dataset.split(corpus, test_size=50, seed=3)
+    train_cabeza, test_cabeza = dataset.split(corpus, test_size=50, seed=3, ventana_cabeza=200)
+
+    assert set(test_cabeza) <= set(corpus[:200])
+    assert not set(test_cabeza) & set(train_cabeza)
+    assert len(train_cabeza) == len(corpus) - 50
+
+    # con ventana, la cola entera sobrevive en train
+    assert set(corpus[200:]) <= set(train_cabeza)
+
+    # sin ventana no: el test uniforme saca parte de la cola, y esas salen de train
+    de_la_cola_en_el_test = set(test_uniforme) & set(corpus[200:])
+    assert de_la_cola_en_el_test, "un test uniforme de 1000 saca algo de la cola"
+    assert not de_la_cola_en_el_test & set(train_uniforme)
+
+
+def test_la_ventana_de_cabeza_rechaza_una_ventana_mas_chica_que_el_test():
+    corpus = [f"p{i}" for i in range(1000)]
+    with pytest.raises(ValueError):
+        dataset.split(corpus, test_size=50, ventana_cabeza=20)
+
+
 def test_split_es_reproducible():
     corpus = [f"p{i}" for i in range(500)]
     assert dataset.split(corpus, test_size=50, seed=3) == dataset.split(

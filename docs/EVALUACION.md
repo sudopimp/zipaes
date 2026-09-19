@@ -1,134 +1,177 @@
 # Evaluación de generadores de candidatos
 
 Esta página existe porque el proyecto afirmaba cosas sobre su generador de candidatos sin
-ninguna medición detrás. Ahora está medido, y el resultado no favorece al proyecto.
+ninguna medición detrás. Ahora está medido, el resultado cambió dos veces por lo que la propia
+medición fue mostrando, y el estado final es este.
 
 Lo corre [`eval/run_eval.py`](../eval/README.md). Reproducible: mismo corpus público, misma
 semilla, mismo protocolo.
 
-## El resultado
+---
 
-**rockyou.txt** · 14.344.391 entradas → 14.339.984 únicas · train 14.319.984 / test 20.000
-held-out, sin solapamiento exacto. Presupuesto **1.000.000 de intentos** para cada generador.
+# El protocolo original estaba sesgado (y cómo se descubrió)
 
-### Todo el conjunto de test (20.000 contraseñas)
+La primera corrida usaba un test **uniforme sobre contraseñas únicas**. Al medir el decodificado
+ordenado del modelo neuronal contra ese test, el resultado fue malo: 1 acierto en 2.000
+intentos. Malo *y sospechoso*, porque los candidatos que el modelo ponía primero eran cosas
+como `strawberry`, `basketball`, `mypassword` — contraseñas evidentemente usadas por mucha
+gente.
 
-| generador | 10² | 10³ | 10⁴ | 10⁵ | 10⁶ | desperdicio |
-|---|---|---|---|---|---|---|
-| `mascaras:rockyou` | 0.00% | 0.01% | 0.06% | 0.30% | **2.63%** | 0.0% |
-| `reglas:best64` | 0.00% | 0.01% | 0.06% | 0.34% | 2.15% | 26.4% |
-| `reglas:dive` | 0.00% | 0.01% | 0.04% | 0.24% | 1.36% | 32.0% |
-| `markov:ordenado` | 0.00% | 0.00% | **0.06%** | **0.31%** | 0.49% | 0.0% |
-| `markov:muestreo` | 0.00% | 0.00% | 0.01% | 0.07% | 0.47% | 6.9% |
-| `diccionario` | 0.00% | 0.00% | 0.00% | 0.00% | 0.00% | 0.0% |
+El problema era la métrica, no el generador. Deduplicando el corpus, una contraseña que eligen
+un millón de personas cuenta **exactamente igual** que una que eligió una sola. Eso mide
+"cuánto tarda en recuperar una contraseña única al azar", que castiga a los modelos por
+probabilidad justo en aquello en lo que son buenos.
 
-La fila `passgpt` (0,86 % a 10⁶) sale de la corrida aparte que incluye el modelo neuronal; el
-resto, de la corrida sin él. Los dos conjuntos de test y el protocolo son idénticos, y los
-baselines reprodujeron **exactamente** los mismos números en las dos corridas, así que son
-comparables.
+La pregunta de un ataque real es otra: **"cuánto tarda en recuperar la contraseña de una
+persona al azar"**. Para eso el test tiene que muestrearse de las contraseñas que la gente
+realmente usa. Eso es `--ventana-cabeza`: el test sale de las 100.000 contraseñas más
+frecuentes en vez de uniformemente sobre las 14,3 millones.
 
-### Sólo contraseñas de hasta 10 caracteres (16.674)
+Las dos métricas se reportan. No son intercambiables y responden a preguntas distintas.
 
-Se conserva como **diagnóstico de la limitación de PassGPT**, que no produce longitudes
-mayores. Pero ojo: no es la tabla principal. Recortar el test a las longitudes que un
-generador sí cubre esconde la limitación en vez de mostrarla, y penaliza a los que sí cubren
-todas — por eso la comparación de arriba es sobre el test completo.
+---
 
-| generador | 10⁴ | 10⁵ | 10⁶ |
+# El resultado, protocolo realista
+
+**rockyou.txt** · 14.339.984 únicas · train 14.319.984 / test 20.000 muestreado de las
+100.000 más frecuentes, sin solapamiento exacto.
+
+## Presupuesto bajo: donde se decide una recuperación real
+
+| generador | 10² | 10³ | 10⁴ | 10⁵ | desperdicio |
+|---|---|---|---|---|---|
+| `reglas:best64` | 0.04% | 0.42% | 3.23% | **14.79%** | 15.0% |
+| `reglas:dive` | 0.04% | 0.23% | 1.45% | 7.78% | 30.0% |
+| `markov:ordenado` | 0.01% | 0.09% | 0.39% | 3.30% | 0.0% |
+| `mascaras:rockyou` | 0.00% | 0.01% | 0.04% | 2.10% | 0.0% |
+| `markov:muestreo` | 0.01% | 0.02% | 0.10% | 0.73% | 1.0% |
+| `diccionario` | 0.00% | 0.00% | 0.00% | 0.00% | 0.0% |
+
+## El decodificado ordenado del modelo neuronal, a presupuesto muy bajo
+
+`passgpt:ordenado` **no samplea**: enumera la distribución del modelo en orden decreciente de
+probabilidad. Sólo se midió hasta 2.000 intentos porque produce ~11 candidatos por segundo (el
+árbol de prefijos de un transformer es enorme y pocos prefijos terminan).
+
+| generador | 10² | 10³ | 2×10³ |
 |---|---|---|---|
-| `mascaras:rockyou` | 0.07% | 0.36% | 3.15% |
-| `reglas:best64` | 0.07% | 0.40% | 2.48% |
-| `reglas:dive` | 0.04% | 0.29% | 2.00% |
-| `passgpt` | 0.03% | 0.11% | 1.03% |
-| `markov:muestreo` | 0.01% | 0.09% | 0.57% |
-| `markov:ordenado` | 0.02% | 0.08% | 0.42% |
+| **`passgpt:ordenado`** | **0.075%** | **0.695%** | **1.145%** |
+| `reglas:best64` | 0.04% | 0.42% | — |
+| `reglas:dive` | 0.04% | 0.23% | — |
+| `markov:ordenado` | 0.01% | 0.09% | — |
+| `mascaras:rockyou` | 0.00% | 0.01% | — |
 
-## El arreglo: enumerar por probabilidad en vez de samplear
+Comparado en los puntos exactos que se midieron para todos:
 
-La primera corrida dejó un diagnóstico claro: los generadores por muestreo pierden **porque no
-ordenan sus extracciones**. Un modelo por muestreo sabe qué contraseñas son probables, pero las
-va soltando en orden arbitrario, así que a presupuesto chico gasta intentos en la cola de su
-propia distribución.
+- a **100 intentos** saca 0,075 % contra 0,04 % de `best64` (**1,9×**) y 0,00 % de las máscaras;
+- a **1.000 intentos** saca 0,695 % contra 0,42 % de `best64` (**1,65×**), 0,09 % de
+  `markov:ordenado` (**7,7×**) y 0,01 % de las máscaras (**70×**);
+- su **primer acierto aparece en la posición 7**, y entre los 40 primeros hay contraseñas reales
+  (`asdfghjkl`, `1234567890`, `snowwhite`, `billabong`, `snoopdogg`, `princess19`…).
 
-La respuesta es `MarkovModel.iter_ordenado` (`zipaes wordlist --ordenado`): un recorrido
-**mejor-primero** sobre el árbol de prefijos, con la cola de candidatos ordenada por
-log-probabilidad. Un prefijo es cota superior de todos sus descendientes, así que sacar de la
-cola en orden de probabilidad garantiza que lo emitido sale en ese orden. Es determinista y usa
-lo que el modelo aprendió, no reglas escritas a mano.
+Con 2.000 intentos llega a 1,145 %. `best64` necesita más de 1.000 y menos de 10.000 para
+alcanzar ese valor, así que **la ventaja del decodificado neuronal se da en el tramo bajo,
+hasta unos pocos miles de intentos**; a partir de ahí `best64` —con una wordlist de 14,3 millones
+de palabras y 64 reglas— lo pasa.
 
-El efecto medido, contra la misma versión sampleando:
+Que es exactamente el régimen que importa cuando el objetivo es **una persona concreta** y no
+una filtración entera: se prueba un puñado de miles de candidatos, no mil millones.
 
-| presupuesto | muestreo | ordenado | mejora |
+---
+
+# El resultado con el protocolo anterior (uniforme), para comparar
+
+Se conserva porque es la medición que destapó el sesgo y porque muestra qué cambia. Test de
+20.000 contraseñas únicas al azar de las 14,3 millones.
+
+| generador | 10⁴ | 10⁵ | 10⁶ | desperdicio |
+|---|---|---|---|---|
+| `mascaras:rockyou` | 0.06% | 0.30% | **2.63%** | 0.0% |
+| `reglas:best64` | 0.06% | 0.34% | 2.15% | 26.4% |
+| `reglas:dive` | 0.04% | 0.24% | 1.36% | 32.0% |
+| `markov:ordenado` | 0.06% | 0.31% | 0.49% | 0.0% |
+| `markov:muestreo` | 0.01% | 0.07% | 0.47% | 6.9% |
+| `passgpt` (muestreo) | 0.03% | 0.10% | 0.86% | 0.7% |
+| `diccionario` | 0.00% | 0.00% | 0.00% | 0.0% |
+
+Con este test las diferencias se aplanan (**0,3 % contra 14,8 %** a 10⁵ para `best64`) porque
+casi todas las contraseñas del test son irrepetibles, y contra una contraseña irrepetible
+ninguna estrategia puede hacer mucho.
+
+## El arreglo del orden, medido en las dos métricas
+
+El diagnóstico que dejó la primera corrida —los generadores por muestreo pierden **porque no
+ordenan sus extracciones**— se confirmó en las dos, con la misma magnitud:
+
+| presupuesto | `markov:muestreo` | `markov:ordenado` | mejora |
 |---|---|---|---|
-| 10.000 | 0.01% | 0.06% | **6x** |
-| 100.000 | 0.07% | 0.31% | **4,4x** |
-| 1.000.000 | 0.47% | 0.49% | 1,04x |
+| 10.000 (realista) | 0.10% | 0.39% | **3,9x** |
+| 100.000 (realista) | 0.73% | 3.30% | **4,5x** |
+| 10.000 (uniforme) | 0.01% | 0.06% | **6x** |
+| 100.000 (uniforme) | 0.07% | 0.31% | **4,4x** |
 
-A 100.000 intentos el ordenado **le gana a las máscaras de hashcat** (0,31 % contra 0,30 %) y
-queda a un pelo de `best64`. A 10.000 empata con los dos. **La ventaja se diluye a medida que
-crece el presupuesto**: con suficientes extracciones, el muestreo termina sacando lo mismo que
-la enumeración ordenada, sólo que más tarde.
+Y bajo el protocolo realista `markov:ordenado` **le gana a las máscaras de hashcat en todos los
+puntos medidos** (a 10⁴ le saca 10×), que es la enumeración hecha a mano contra el modelo
+aprendido.
 
-Costo: unos 3.000-4.800 candidatos por segundo, 166 MB de memoria, **un solo núcleo de CPU y
-cero GPU**. Un millón de candidatos ordenados son ~3,5 minutos de CPU.
+---
 
-## Qué dice esto, sin adornos
+# Qué dice esto, sin adornos
 
-1. **No alcanza para decir que es el estado del arte.** A 10⁶ el orden de la tabla lo siguen
-   encabezando las máscaras y las reglas de hashcat: la enumeración diseñada a mano le gana al
-   modelo aprendido cuando el presupuesto es grande.
-2. **Pero el diagnóstico era correcto y el arreglo funciona.** Ordenar vale 4-6× a los
-   presupuestos donde una recuperación se decide de verdad (10⁴-10⁵ intentos), y ahí el modelo
-   aprendido empata o supera a la enumeración hecha a mano.
-3. **PassGPT (el modelo publicado) sigue por delante de los dos Markov a 10⁶** (0,86 % contra
-   0,49 %), y lo hace aun teniendo prohibido producir contraseñas de más de 10 caracteres. Su
-   problema no es la calidad del modelo: es que samplea.
-4. **El paso que falta es evidente y está sin hacer: aplicar el mismo orden a la distribución
-   del modelo neuronal.** PassGPT sabe puntuar; lo que no hace es enumerar en orden. Un
-   decodificado por haz o por top-k sobre sus probabilidades debería juntar lo mejor de los dos,
-   y es exactamente lo que la variante guiada del paper propone. Requiere GPU, pero acotada
-   (minutos, no horas) porque no hace falta samplear millones: hace falta puntuar.
+1. **En el tramo bajo —hasta unos pocos miles de intentos— el decodificado ordenado del modelo
+   neuronal es el mejor generador medido, y por márgenes grandes** (1,65× al mejor baseline a
+   1.000 intentos; 70× a las máscaras). Ese es el régimen de un ataque dirigido.
+2. **A presupuestos altos manda la enumeración con wordlist**: `best64` con 14,3 millones de
+   palabras y 64 reglas llega a 14,79 % a 10⁵ y pasa al modelo neuronal en algún punto entre
+   10³ y 10⁴ intentos.
+3. **El decodificado ordenado es caro de producir**: ~11 candidatos por segundo contra ~1.700
+   del muestreo. Sirve para presupuestos de miles, no de millones. Las dos cosas son ciertas y
+   hay que decir las dos.
+4. **La métrica importa tanto como el generador.** El mismo `best64` da 0,34 % o 14,79 % a 10⁵
+   según de dónde salga el test. Publicar un número sin decir la métrica no dice nada.
+
+## La advertencia que no hay que saltear
+
+**PassGPT fue entrenado sobre datos derivados de RockYou**, el mismo corpus con el que se
+evalúa. Su partición de test puede estar parcialmente memorizada, y sus números pueden estar
+inflados por eso. No hay partición por usuario posible (`rockyou.txt` no trae identificador), y
+la contaminación es inevitable con los pesos publicados. **El resultado está presentado con esa
+salvedad, no a pesar de ella**: una parte de lo que el modelo hace bien en este test puede ser
+recordar en vez de generalizar.
 
 ## Lo que sí sale bien parado
 
-- **Las máscaras ganan con 0 % de desperdicio.** Enumerar sin repetir, en orden de probabilidad,
-  es lo que más rinde por intento.
-- `reglas:best64` gasta un **26,4 %** de su presupuesto repitiendo candidatos y aun así queda
-  segunda: deduplicar antes de atacar es una mejora gratis que quedó sin hacer.
-- El conjunto de test es held-out de verdad: por eso el `diccionario` saca exactamente 0 %.
+- **Las máscaras con 0 % de desperdicio** siguen siendo muy eficientes por intento en el
+  régimen de presupuesto alto.
+- `reglas:best64` gasta un 15-26 % de su presupuesto repitiendo candidatos y aun así gana a
+  presupuesto alto: deduplicar antes de atacar es una mejora gratis que quedó sin hacer.
+- El `diccionario` saca 0 % en las dos métricas: el test es held-out de verdad.
 
 ## Limitaciones (afectan la lectura de los números)
 
 1. **La partición no es por usuario.** `rockyou.txt` no trae identificador de usuario, así que
-   no se puede separar por persona como hacen los trabajos que sí lo tienen. Particionar al azar
-   deja pasar variantes morfológicas entre train y test. Eso favorece a todos por igual, pero
-   infla los valores absolutos.
-2. **Contaminación de PassGPT.** Fue entrenado sobre datos derivados de RockYou, el mismo corpus
-   con el que se evalúa: su partición de test puede estar parcialmente memorizada. Su número
-   podría estar *inflado* por memorización, y **aun así pierde**. Eso hace la conclusión más
-   fuerte, no más débil.
-3. **Los modelos por muestreo no tienen orden de prioridad intrínseco.** Dos corridas del mismo
-   modelo dan curvas algo distintas. Las reglas y las máscaras son deterministas.
-4. **Un solo punto de operación.** Todo sin GPU y con una configuración fija de reglas. Un
-   atacante real elegiría la configuración según lo que sepa del objetivo; esto mide generadores
-   genéricos, no estrategias dirigidas.
-5. **Los valores absolutos son bajos a propósito.** El test es una muestra al azar de las
-   14,3 millones de contraseñas únicas de rockyou, o sea que incluye una cola enorme de
-   contraseñas irrepetibles. Un objetivo real (una persona concreta) es mucho más fácil que una
-   muestra al azar de una filtración. Esta tabla mide **calidad relativa de generadores**, no la
-   probabilidad de abrir un zip cualquiera.
+   no se puede separar por persona. Particionar al azar deja pasar variantes morfológicas entre
+   train y test.
+2. **Contaminación de PassGPT**, descrita arriba.
+3. **`passgpt:ordenado` se midió hasta 2.000 intentos**, por su costo. Los demás, hasta 10⁵-10⁶.
+4. **Los valores absolutos dependen de la métrica** y hay que leerlos siempre con la ventana de
+   muestreo del test al lado.
 
 ## Cómo reproducirlo
 
 ```bash
+# protocolo realista (el principal)
+python eval/run_eval.py --presupuesto 100000 --test-size 20000 --ventana-cabeza 100000 \
+    --salida eval/results-cabeza
+
+# protocolo uniforme (el que destapó el sesgo)
 python eval/run_eval.py --presupuesto 1000000 --test-size 20000 --salida eval/results
-python eval/run_eval.py --presupuesto 1000000 --test-size 20000 --salida eval/results --passgpt
+
+# el decodificado neuronal ordenado (necesita el extra [eval] y GPU)
+python eval/run_eval.py --passgpt --presupuesto 2000 --ventana-cabeza 100000
 ```
 
-Los crudos quedan en `eval/results/resultados.json` (la curva agregada de cada generador, con
-intentos, únicos, desperdicio y velocidad) y la tabla en `eval/results/tabla.md`.
-
-Dentro de una corrida, el medidor conserva la posición exacta de cada acierto, que es lo que
-permite derivar la curva de un subconjunto —como la de ≤10 caracteres— sin volver a correr
-nada. Esas posiciones no se persisten en el JSON, para no volcar al repositorio las contraseñas
-del corpus.
+Los crudos quedan en `eval/results*/resultados.json` y las tablas en `tabla.md`. Dentro de una
+corrida el medidor conserva la posición exacta de cada acierto, que es lo que permite derivar
+curvas de subconjuntos sin volver a correr nada; esas posiciones no se persisten en el JSON para
+no volcar al repositorio las contraseñas del corpus.

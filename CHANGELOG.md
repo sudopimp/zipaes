@@ -3,6 +3,62 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado según [SemVer](https://semver.org/lang/es/).
 
+## [1.4.0] — 2026-09-19
+
+Dos cosas: se aplica el arreglo del orden al modelo neuronal, y se corrige un sesgo del propio
+protocolo de evaluación que la medición dejó al descubierto.
+
+### Agregado
+
+- **`generar_passgpt_ordenado`** — decodificado **ordenado** de PassGPT: el mismo recorrido
+  mejor-primero que `MarkovModel.iter_ordenado`, pero con el transformer como puntuador. Los
+  prefijos se evalúan en lotes para aprovechar la GPU, agrupados por largo (rellenar correría
+  las posiciones de GPT-2, que usa embeddings absolutos aprendidos).
+- **`--ventana-cabeza`** en el arnés: el test se muestrea de las N contraseñas más frecuentes
+  en vez de uniformemente sobre todas las únicas. Cambia la pregunta que responde la evaluación,
+  y resultó ser la correcta.
+
+### Medido
+
+Con el test realista (muestreado de las 100.000 contraseñas más usadas), a presupuesto bajo:
+
+| generador | 10² | 10³ | 2×10³ |
+|---|---|---|---|
+| `passgpt:ordenado` | **0.075%** | **0.695%** | **1.145%** |
+| `reglas:best64` | 0.04% | 0.42% | — |
+| `reglas:dive` | 0.04% | 0.23% | — |
+| `markov:ordenado` | 0.01% | 0.09% | — |
+| `mascaras:rockyou` | 0.00% | 0.01% | — |
+
+A 1.000 intentos el decodificado ordenado del modelo neuronal saca **1,65×** lo que el mejor
+baseline, **7,7×** lo que el Markov ordenado y **70×** lo que las máscaras de hashcat. Su primer
+acierto aparece en la posición 7. Es el mejor generador medido en el tramo de presupuesto bajo,
+que es el régimen de un ataque dirigido.
+
+A presupuesto alto sigue ganando la enumeración con wordlist: `best64` llega a 14,79 % a 10⁵ y
+pasa al modelo neuronal en algún punto entre 10³ y 10⁴ intentos. Y el decodificado ordenado es
+**caro**: ~11 candidatos por segundo contra ~1.700 del muestreo, así que sirve para miles de
+intentos, no para millones.
+
+### Corregido (protocolo)
+
+- **El test uniforme sobre contraseñas únicas sesgaba la evaluación contra los modelos por
+  probabilidad.** Al deduplicar, una contraseña que eligen un millón de personas cuenta igual
+  que una que eligió una sola, así que la métrica premiaba cubrir la cola irrepetible en vez de
+  acertar lo que la gente usa. Con el test de cabeza, el mismo `best64` pasa de 0,34 % a 14,79 %
+  a 10⁵: **43×**, sólo por cambiar de dónde sale el test.
+- Se detectó porque el decodificado neuronal daba 1 acierto en 2.000 intentos *mientras ponía
+  primero contraseñas como `strawberry` y `basketball`*. Un resultado malo con candidatos
+  buenísimos es señal de que la métrica está mal, no el generador.
+- Las dos métricas se reportan por separado. No son intercambiables.
+
+### Notas
+
+- **La contaminación de PassGPT sigue ahí y está declarada**: fue entrenado sobre datos
+  derivados de RockYou, el mismo corpus de evaluación, así que parte de su ventaja en este test
+  puede ser memorizar en vez de generalizar. Con los pesos publicados y sin identificador de
+  usuario en `rockyou.txt` no hay forma de eliminarla.
+
 ## [1.3.0] — 2026-09-19
 
 Cierra el diagnóstico de la evaluación: el problema de los generadores por muestreo era **el

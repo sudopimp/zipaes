@@ -1,0 +1,125 @@
+{
+  "metadatos": {
+    "corpus": "/home/fer/opt/rockyou.txt",
+    "corpus_unico": 14339984,
+    "train": 14319984,
+    "test": 20000,
+    "test_le10": 19485,
+    "ventana_cabeza": 100000,
+    "presupuesto": 100000,
+    "semilla": 20260919,
+    "orden_markov": 2,
+    "tope_train_markov": null,
+    "passgpt": false
+  },
+  "resultados": [
+    {
+      "generador": "diccionario",
+      "tamano_test": 20000,
+      "intentos": 100000,
+      "unicos": 100000,
+      "encontradas": 0,
+      "desperdicio_pct": 0.0,
+      "intentos_por_segundo": 2776966.1,
+      "segundos": 0.04,
+      "curva_pct": {
+        "100": 0.0,
+        "1000": 0.0,
+        "10000": 0.0,
+        "100000": 0.0,
+        "1000000": 0.0,
+        "10000000": 0.0
+      }
+    },
+    {
+      "generador": "reglas:best64",
+      "tamano_test": 20000,
+      "intentos": 100000,
+      "unicos": 85002,
+      "encontradas": 2958,
+      "desperdicio_pct": 15.0,
+      "intentos_por_segundo": 39980.8,
+      "segundos": 2.5,
+      "curva_pct": {
+        "100": 0.035,
+        "1000": 0.425,
+        "10000": 3.23,
+        "100000": 14.79,
+        "1000000": 14.79,
+        "10000000": 14.79
+      }
+    },
+    {
+      "generador": "reglas:dive",
+      "tamano_test": 20000,
+      "intentos": 100000,
+      "unicos": 70039,
+      "encontradas": 1556,
+      "desperdicio_pct": 29.96,
+      "intentos_por_segundo": 43152.8,
+      "segundos": 2.32,
+      "curva_pct": {
+        "100": 0.04,
+        "1000": 0.23,
+        "10000": 1.445,
+        "100000": 7.78,
+        "1000000": 7.78,
+        "10000000": 7.78
+      }
+    },
+    {
+      "generador": "mascaras:rockyou",
+      "tamano_test": 20000,
+      "intentos": 100000,
+      "unicos": 100000,
+      "encontradas": 420,
+      "desperdicio_pct": 0.0,
+      "intentos_por_segundo": 34177.0,
+      "segundos": 2.93,
+      "curva_pct": {
+        "100": 0.0,
+        "1000": 0.005,
+        "10000": 0.04,
+        "100000": 2.1,
+        "1000000": 2.1,
+        "10000000": 2.1
+      }
+    },
+    {
+      "generador": "markov:orden2:muestreo",
+      "tamano_test": 20000,
+      "intentos": 100000,
+      "unicos": 99027,
+      "encontradas": 147,
+      "desperdicio_pct": 0.97,
+      "intentos_por_segundo": 11390.1,
+      "segundos": 8.78,
+      "curva_pct": {
+        "100": 0.005,
+        "1000": 0.02,
+        "10000": 0.105,
+        "100000": 0.735,
+        "1000000": 0.735,
+        "10000000": 0.735
+      }
+    },
+    {
+      "generador": "markov:orden2:ordenado",
+      "tamano_test": 20000,
+      "intentos": 100000,
+      "unicos": 100000,
+      "encontradas": 660,
+      "desperdicio_pct": 0.0,
+      "intentos_por_segundo": 3000.0,
+      "segundos": 33.33,
+      "curva_pct": {
+        "100": 0.015,
+        "1000": 0.09,
+        "10000": 0.385,
+        "100000": 3.3,
+        "1000000": 3.3,
+        "10000000": 3.3
+      }
+    }
+  ]
+}

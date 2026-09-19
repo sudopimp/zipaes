@@ -21,9 +21,18 @@ corpus      rockyou.txt (14.344.391 entradas) — el corpus público que usa el 
 normalizado se quitan duplicados exactos, y se descartan las de menos de 4 o más de 40
             caracteres (las de 1-3 se recuperan trivialmente y ensucian la comparación)
 partición   por contraseña, semilla fija, SIN solapamiento exacto entre train y test
-            train 14.319.984 · test 20.000 (16.674 de ellas de ≤10 caracteres)
+            train 14.319.984 · test 20.000
+ventana     de dónde sale el test, y esto cambia la pregunta que responde la evaluación:
+              --ventana-cabeza 100000  → de las contraseñas que la gente realmente usa
+                                          ("una persona al azar", protocolo principal)
+              sin la opción            → uniforme sobre las únicas ("una contraseña
+                                          única al azar", más duro, sesga contra los
+                                          modelos por probabilidad)
 oráculo     pertenencia al conjunto de test, que es exactamente lo que un ataque real consulta
 ```
+
+El sesgo de la métrica uniforme no es teórico y está medido: el mismo `best64` da **0,34 %** o
+**14,79 %** a 10⁵ intentos según de dónde salga el test. Por eso se reportan las dos.
 
 ## Los generadores comparados
 
@@ -35,6 +44,7 @@ oráculo     pertenencia al conjunto de test, que es exactamente lo que un ataqu
 | `mascaras:rockyou` | los conjuntos de máscaras de hashcat por rango de frecuencia. |
 | `markov:ordenN` | el modelo de n-gramas del paquete, entrenado sobre train. |
 | `passgpt` | PassGPT (arXiv:2306.01545), el modelo neuronal publicado por sus autores. |
+| `passgpt:ordenado` | El mismo modelo, pero **enumerando** su distribución por probabilidad decreciente en vez de samplearla. |
 
 ## Cómo correrlo
 

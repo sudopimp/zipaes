@@ -81,12 +81,14 @@ def construir_generadores(
         )
 
     if con_passgpt:
-        from eval.neural import generar_passgpt
+        from eval.neural import generar_passgpt, generar_passgpt_ordenado
 
         ruta = ruta_modelo or "javirandor/passgpt-10characters"
         # el modelo de 10 caracteres sólo produce longitudes <= 10, así que su curva se mide
         # sobre el subconjunto comparable
         trabajo.append(("passgpt", generar_passgpt(presupuesto, modelo=ruta)))
+        # y el mismo modelo, pero enumerando su distribución en vez de samplearla
+        trabajo.append(("passgpt:ordenado", generar_passgpt_ordenado(presupuesto, modelo=ruta)))
 
     return trabajo
 
@@ -141,6 +143,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--corpus", default=dataset.RUTA_ROCKYOU)
     parser.add_argument("--presupuesto", type=int, default=10**6)
     parser.add_argument("--test-size", type=int, default=20_000)
+    parser.add_argument(
+        "--ventana-cabeza",
+        type=int,
+        default=None,
+        help="muestrea el test de las N contraseñas más frecuentes (las que la gente usa) "
+        "en vez de uniformemente sobre todas las únicas",
+    )
     parser.add_argument("--semilla", type=int, default=20260919)
     parser.add_argument("--salida", default="eval/results")
     parser.add_argument(
@@ -163,9 +172,19 @@ def main(argv: list[str] | None = None) -> int:
     corpus = dataset.load_corpus(args.corpus, limit=args.limit_corpus)
     _log(f"  {len(corpus):,} contraseñas únicas en {time.perf_counter() - t0:.1f}s")
 
-    train, test = dataset.split(corpus, test_size=args.test_size, seed=args.semilla)
+    train, test = dataset.split(
+        corpus,
+        test_size=args.test_size,
+        seed=args.semilla,
+        ventana_cabeza=args.ventana_cabeza,
+    )
     test_le10 = {p for p in test if len(p) <= 10}
     _log(f"  train {len(train):,} / test {len(test):,} (<=10 chars: {len(test_le10):,})")
+    if args.ventana_cabeza:
+        _log(
+            f"  el test sale de las {args.ventana_cabeza:,} contraseñas más frecuentes "
+            "(persona al azar, no contraseña única al azar)"
+        )
 
     train_path = os.path.join(args.dir_trabajo, "train_wordlist.txt")
     _log(f"escribiendo wordlist de train en {train_path}...")
@@ -219,6 +238,7 @@ def main(argv: list[str] | None = None) -> int:
         "train": len(train),
         "test": len(test),
         "test_le10": len(test_le10),
+        "ventana_cabeza": args.ventana_cabeza,
         "presupuesto": args.presupuesto,
         "semilla": args.semilla,
         "orden_markov": args.orden_markov,

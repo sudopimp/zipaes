@@ -35,20 +35,22 @@ pre-commit install  # opcional: corre todo antes de cada commit
 
 ## Áreas donde hace falta ayuda
 
-**La más importante: aplicar la enumeración ordenada al modelo neuronal.** Ya está medido que
-ordenar vale 4-6× a los presupuestos donde se decide una recuperación
-([`docs/EVALUACION.md`](docs/EVALUACION.md)), y que PassGPT —el modelo publicado— pierde contra
-la enumeración determinista **porque samplea**, no porque su distribución sea mala. Falta un
-decodificado por haz o por top-k sobre sus probabilidades, que es lo que la variante guiada del
-propio paper propone. No hace falta samplear millones: hace falta puntuar, así que es GPU
-acotada (minutos, no horas).
+**La más importante: abaratar el decodificado ordenado del modelo neuronal.** Está medido que
+es el mejor generador a presupuesto bajo —1,65× al mejor baseline a 1.000 intentos— pero produce
+**~11 candidatos por segundo** contra ~1.700 del muestreo, porque recorre un árbol de prefijos
+enorme del que pocos terminan. Sirve para miles de intentos; para millones hay que hacerlo
+barato: decodificado por haz propiamente dicho, o poda por cota optimista que descarte ramas
+antes de evaluarlas. Ese es el techo actual y la mejora de fondo.
 
 Otras:
 
-- **Un generador neuronal que ordene.** La pieza que falta arriba, dicha como funcionalidad:
-  `passgpt --ordenado`.
-- **Deduplicar antes de atacar.** Las reglas de hashcat gastan un 26 % de su presupuesto
-  repitiendo candidatos y aun así quedan segundas. Es la mejora más barata que quedó sin hacer.
+- **Llevar el test de cabeza a una partición por usuario.** `rockyou.txt` no trae identificador,
+  así que hoy el test se muestrea de las contraseñas más frecuentes. Es una aproximación
+  razonable a "una persona al azar", pero no es lo mismo, y deja pasar variantes morfológicas
+  entre train y test.
+- **Deduplicar antes de atacar.** Las reglas de hashcat gastan un 15-26 % de su presupuesto
+  repitiendo candidatos y aun así quedan primeras a presupuesto alto. Es la mejora más barata
+  que quedó sin hacer.
 - **Soporte de ZIP64** (>4 GB): hoy se detecta e informa, pero el parseo completo está
   pendiente. Archivos multi-volumen, también.
 - **Verificación con archivos reales de más herramientas**: hay interoperabilidad probada

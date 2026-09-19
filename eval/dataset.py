@@ -93,20 +93,36 @@ def split(
     *,
     test_size: int = 20_000,
     seed: int = 20260919,
+    ventana_cabeza: int | None = None,
 ) -> tuple[list[str], list[str]]:
     """Parte el corpus en (train, test) con semilla fija y sin solapamiento exacto.
 
-    El test se toma de una copia mezclada; el train es todo lo demás **en su orden original**,
-    que es el orden de frecuencia y por lo tanto el que tiene sentido para una wordlist.
+    ``ventana_cabeza`` cambia **de dónde sale el test**, y no es un detalle menor:
+
+    - sin él (por defecto), el test es una muestra uniforme sobre todas las contraseñas
+      únicas. Mide "cuánto tarda en recuperar una contraseña única al azar", que es una
+      pregunta dura y que castiga a los modelos por probabilidad: una contraseña que eligen
+      un millón de personas cuenta igual que una que eligió una sola.
+    - con él, el test se muestrea de las ``ventana_cabeza`` contraseñas más frecuentes, que
+      son las que la gente **realmente** usa. Mide "cuánto tarda en recuperar la contraseña de
+      una persona al azar", que es la pregunta de un ataque de verdad.
+
+    Las dos son legítimas y responden a cosas distintas; por eso están las dos y se reportan
+    por separado. El train es el mismo en ambos casos salvo por la parte del test.
     """
-    if test_size >= len(corpus):
+    universo = (
+        list(range(min(ventana_cabeza, len(corpus))))
+        if ventana_cabeza
+        else list(range(len(corpus)))
+    )
+    if test_size >= len(universo):
         raise ValueError(
-            f"test_size ({test_size}) no puede ser mayor o igual al corpus ({len(corpus)})"
+            f"test_size ({test_size}) no puede ser mayor o igual al universo de muestreo "
+            f"({len(universo)})"
         )
 
-    indice = list(range(len(corpus)))
-    random.Random(seed).shuffle(indice)
-    elegidos = set(indice[:test_size])
+    random.Random(seed).shuffle(universo)
+    elegidos = set(universo[:test_size])
 
     test = [corpus[i] for i in sorted(elegidos)]
     train = [palabra for i, palabra in enumerate(corpus) if i not in elegidos]

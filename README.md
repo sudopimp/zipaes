@@ -320,11 +320,12 @@ En [`docs/METODOLOGIA.md`](docs/METODOLOGIA.md) está el razonamiento completo.
   ahí: el costo del kernel de hashcat crece con el tamaño del archivo comprimido, y su ventaja
   crece con el tamaño de la lista y con la cantidad de GPUs. Para ZipCrypto el camino propio es
   el mejor punto de partida, no una regla universal.
-- **El motor de candidatos está medido.** Sobre un test held-out: a un millón de intentos
-  máscaras de hashcat 2,63 %, sus reglas 2,15 %, PassGPT 0,86 %, y el modelo de Markov de este
-  paquete 0,49 %. Pero **a 10⁴-10⁵ intentos el modo ordenado empata con las máscaras y las
-  supera a 10⁵**, con 4-6× de ventaja sobre samplear. Todo el detalle, con el protocolo y las
-  limitaciones, en [`docs/EVALUACION.md`](docs/EVALUACION.md).
+- **El motor de candidatos está medido.** Con un test realista (las contraseñas que la gente de
+  verdad usa), **a presupuesto bajo el mejor generador es el decodificado ordenado del modelo
+  neuronal**: a 1.000 intentos saca 1,65× lo que la mejor regla de hashcat, 7,7× lo que el
+  modelo propio y 70× lo que sus máscaras. A presupuesto alto manda la enumeración con wordlist
+  (`best64` llega a 14,79 % a 10⁵). Todo el detalle, con el protocolo, las dos métricas y las
+  limitaciones declaradas, en [`docs/EVALUACION.md`](docs/EVALUACION.md).
 - **ZIP64**: se detecta e informa, pero el soporte es parcial (archivos >4 GB o muchos
   miles de entradas pueden fallar). Los archivos multi-volumen quedan fuera.
 - **No hace fuerza bruta.** No adivina: prueba candidatos que le des, o delega el trabajo

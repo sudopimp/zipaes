@@ -18,6 +18,12 @@ Versionado según [SemVer](https://semver.org/lang/es/).
   `0x0001`, no sólo por el localizador al final del archivo. `UnsupportedZipError` y
   `has_zip64_extra` se exportan.
 
+### Interno
+
+- `zipaes/_search.py`: la búsqueda paralela que compartían los dos motores de ataque estaba
+  duplicada; ahora hay una sola implementación, con el umbral de paralelización como
+  parámetro y el predicado declarado a nivel de módulo (lo que exige `multiprocessing`).
+
 ## [1.1.0] — 2026-09-19
 
 Cierra las cuatro brechas identificadas en la revisión de 1.0.0: soporte de ZipCrypto,

@@ -5,14 +5,13 @@ Este es el camino **lento pero correcto**: cada candidato se verifica recalculan
 tenga 2 bytes (el caso AE-1, donde el ataque por GPU del modo 13600 de hashcat no es fiable).
 
 Para volúmenes grandes conviene el camino rápido: emitir el hash con
-:func:`zipaes.hashfmt.emit_hash` y dejarlo en hashcat o John — ver
-:mod:`zipaes.backend`, que se encarga de orquestarlos.
+:func:`zipaes.hashfmt.emit_hash` y dejarlo en hashcat o John — ver :mod:`zipaes.backend`,
+que se encarga de orquestarlos.
 """
 
 from __future__ import annotations
 
-import os
-
+from ._search import find_first
 from .candidates import (  # noqa: F401  (reexportados por compatibilidad)
     build_wordlist,
     iter_candidates,
@@ -30,16 +29,9 @@ __all__ = [
 ]
 
 
-def _init_worker(entry: AesEntry) -> None:
-    global _ENTRY
-    _ENTRY = entry
-
-
-def _worker(candidates: list[str]) -> str | None:
-    for candidate in candidates:
-        if verify(_ENTRY, candidate):
-            return candidate
-    return None
+def _coincide(entry: AesEntry, candidato: str) -> bool:
+    """Predicado de nivel de módulo (``multiprocessing`` necesita serializarlo)."""
+    return verify(entry, candidato)
 
 
 def crack_entry(entry: AesEntry, candidates) -> str | None:
@@ -72,19 +64,4 @@ def crack(
     else:
         candidates = list(iter_candidates(words or [], with_mutations=with_mutations))
 
-    if not candidates:
-        return None
-
-    jobs = jobs or os.cpu_count() or 1
-    if jobs <= 1 or len(candidates) < 2000:
-        return crack_entry(entry, candidates)
-
-    from multiprocessing import Pool
-
-    chunks = [candidates[index::jobs] for index in range(jobs)]
-    with Pool(jobs, initializer=_init_worker, initargs=(entry,)) as pool:
-        for result in pool.imap_unordered(_worker, chunks):
-            if result:
-                pool.terminate()
-                return result
-    return None
+    return find_first(candidates, entry, _coincide, jobs=jobs)

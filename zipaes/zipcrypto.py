@@ -22,6 +22,8 @@ import zlib
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 
+from ._search import find_first
+
 __all__ = [
     "ZipCryptoEntry",
     "ZipCryptoKeys",
@@ -251,16 +253,12 @@ def verify(entry: ZipCryptoEntry, password: str | bytes) -> bool:
     return zlib.crc32(plain) & 0xFFFFFFFF == entry.crc & 0xFFFFFFFF
 
 
-def _init_worker(entry: ZipCryptoEntry) -> None:
-    global _ENTRY
-    _ENTRY = entry
+def _coincide(entry: ZipCryptoEntry, candidato: str) -> bool:
+    """Predicado de nivel de módulo (``multiprocessing`` necesita serializarlo).
 
-
-def _worker(candidates: list[str]) -> str | None:
-    for candidate in candidates:
-        if passes_header_check(_ENTRY, candidate) and verify(_ENTRY, candidate):
-            return candidate
-    return None
+    Filtro barato primero; sólo si pasa se hace el trabajo completo.
+    """
+    return passes_header_check(entry, candidato) and verify(entry, candidato)
 
 
 def _iter_candidates(words: Iterable[str], min_len: int, max_len: int) -> Iterator[str]:
@@ -293,22 +291,4 @@ def crack(
     else:
         candidates = list(_iter_candidates(iter(words or []), min_len, max_len))
 
-    if not candidates:
-        return None
-
-    jobs = jobs or os.cpu_count() or 1
-    if jobs <= 1 or len(candidates) < 5000:
-        for candidate in candidates:
-            if passes_header_check(entry, candidate) and verify(entry, candidate):
-                return candidate
-        return None
-
-    from multiprocessing import Pool
-
-    chunks = [candidates[index::jobs] for index in range(jobs)]
-    with Pool(jobs, initializer=_init_worker, initargs=(entry,)) as pool:
-        for result in pool.imap_unordered(_worker, chunks):
-            if result:
-                pool.terminate()
-                return result
-    return None
+    return find_first(candidates, entry, _coincide, jobs=jobs, minimo_paralelo=5000)

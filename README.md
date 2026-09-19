@@ -9,7 +9,7 @@ AES (WinZip AE-1 / AE-2) y ZipCrypto, con hashcat y John the Ripper integrados.
 [![CI](https://github.com/sudopimp/zipaes/actions/workflows/ci.yml/badge.svg)](https://github.com/sudopimp/zipaes/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![Licencia](https://img.shields.io/badge/licencia-MIT-green)
-![Tests](https://img.shields.io/badge/tests-189-brightgreen)
+![Tests](https://img.shields.io/badge/tests-199-brightgreen)
 
 </div>
 
@@ -322,7 +322,7 @@ zipaes/
   selftest.py    autocomprobación de punta a punta
   testkit.py     escritor de zips AES para fixtures de prueba
   cli.py         interfaz de línea de comandos
-tests/           189 pruebas con pytest
+tests/           199 pruebas con pytest
 docs/            metodología, formato, ética y preguntas frecuentes
 ```
 
@@ -332,7 +332,7 @@ docs/            metodología, formato, ética y preguntas frecuentes
 make check    # ruff check + ruff format --check + pytest
 ```
 
-- **189 tests**, todos en verde, sin red ni servicios externos.
+- **199 tests**, todos en verde, sin red ni servicios externos.
 - **Interoperabilidad real**: las pruebas crean archivos con **7-Zip** y con **Info-ZIP** y
   los abren con este paquete, y verifican que 7-Zip acepte lo que el kit de pruebas escribe.
   No se valida contra sí mismo.

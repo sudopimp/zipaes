@@ -31,7 +31,9 @@ classifiers = [
 dependencies = ["cryptography>=41"]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "pytest-cov>=5", "ruff>=0.6"]
+dev = ["pytest>=8", "pytest-cov", "ruff>=0.6"]
+# El generador neuronal del arnés de evaluación (no hace falta para usar el paquete).
+eval = ["torch>=2.4", "transformers>=4.44"]
 
 [project.scripts]
 zipaes = "zipaes.cli:main"

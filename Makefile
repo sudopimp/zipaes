@@ -1,18 +1,21 @@
 # zipaes — tareas de desarrollo
 #
-#   make install   instalación editable + herramientas de desarrollo
-#   make test      corre la suite
-#   make check     lint + formato + tests (lo que corre la CI)
-#   make cli       prueba de humo del CLI
-#   make demo      crea un zip AES de demostración
+#   make install      instalación editable + herramientas de desarrollo
+#   make test         corre la suite
+#   make check        lint + formato + tests (lo que corre la CI)
+#   make eval-rapido  evaluación de generadores a escala reducida (segundos)
+#   make eval         evaluación completa (necesita rockyou.txt y, para PassGPT, [eval])
+#   make cli          prueba de humo del CLI
+#   make demo         crea un zip AES de demostración
 #
 PY ?= .venv/bin/python
 PIP ?= .venv/bin/pip
+FUENTES := zipaes tests eval
 
-.PHONY: help venv install test cov lint fmt check cli demo clean
+.PHONY: help venv install test cov lint fmt check eval eval-rapido cli demo clean
 
 help:
-	@grep -E '^[a-z-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "};{printf "  \033[36m%-10s\033[0m %s\n",$$1,$$2}'
+	@grep -E '^[a-z-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "};{printf "  \033[36m%-12s\033[0m %s\n",$$1,$$2}'
 
 venv: ## crea el entorno virtual local
 	python3 -m venv .venv
@@ -28,15 +31,25 @@ cov: ## pruebas con cobertura
 	$(PY) -m pytest --cov=zipaes --cov-report=term-missing
 
 lint: ## análisis estático
-	$(PY) -m ruff check zipaes tests
+	$(PY) -m ruff check $(FUENTES)
 
 fmt: ## formato y correcciones automáticas
-	$(PY) -m ruff check --fix zipaes tests
-	$(PY) -m ruff format zipaes tests
+	$(PY) -m ruff check --fix $(FUENTES)
+	$(PY) -m ruff format $(FUENTES)
 
 check: lint ## lo mismo que corre la integración continua
-	$(PY) -m ruff format --check zipaes tests
+	$(PY) -m ruff format --check $(FUENTES)
 	$(PY) -m pytest
+
+eval-rapido: ## evaluación a escala reducida, para verificar que el arnés anda
+	$(PY) eval/run_eval.py --limit-corpus 300000 --presupuesto 100000 --test-size 2000 \
+		--salida /tmp/zipaes-eval-rapido
+
+eval: ## evaluación completa publicada (rockyou.txt; --passgpt necesita el extra [eval])
+	$(PY) eval/run_eval.py --presupuesto 1000000 --test-size 20000 --salida eval/results
+
+eval-passgpt: ## evaluación completa incluyendo el modelo neuronal
+	$(PY) eval/run_eval.py --presupuesto 1000000 --test-size 20000 --salida eval/results --passgpt
 
 cli: ## prueba de humo del CLI
 	$(PY) -m zipaes.cli --version

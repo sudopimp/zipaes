@@ -189,12 +189,16 @@ literatura de adivinación: la contraseña tiene estructura, y esa estructura se
 aprender. Se entrena una vez y se guarda en JSON; la generación es reproducible con `--seed`.
 
 **Qué está probado y qué no.** Está probado que el modelo genera candidatos que el mangleo
-no puede alcanzar (hay un test que lo mide). Lo que **no** está medido es cuánto mejora la
-tasa de recuperación: no hay comparación sobre un corpus aparte entre reglas, modelo y otras
-técnicas. Es una técnica conocida bien implementada, no una mejora demostrada. Y es
-deliberadamente de la familia de los n-gramas (estilo `hcstat`), **no** de la generación con
-redes neuronales que es hoy lo más avanzado en adivinación de contraseñas. Ver
-[`CONTRIBUTING.md`](CONTRIBUTING.md).
+no puede alcanzar (hay un test que lo mide). Y **ahora también está medido cuánto ayuda**, con
+un resultado que no favorece al proyecto: a un millón de intentos y sobre contraseñas
+held-out, el modelo recupera **0,57 %** contra **3,15 %** de las máscaras de hashcat y
+**2,48 %** de sus reglas. Es el peor generador de la tabla entre los que sirven para algo.
+
+La razón es estructural: un modelo por muestreo extrae de la distribución que aprendió pero
+**no ordena sus extracciones por probabilidad**, así que a presupuestos bajos desperdicia
+intentos en la cola de su propia distribución, mientras la enumeración determinista recorre
+primero la zona de mayor densidad. La comparación completa, con PassGPT incluido, está en
+[`docs/EVALUACION.md`](docs/EVALUACION.md).
 
 Nada de esto recupera una contraseña aleatoria de 20 caracteres. Contra eso no hay
 estrategia que sirva: es matemática, no perseverancia.
@@ -307,10 +311,11 @@ En [`docs/METODOLOGIA.md`](docs/METODOLOGIA.md) está el razonamiento completo.
   ahí: el costo del kernel de hashcat crece con el tamaño del archivo comprimido, y su ventaja
   crece con el tamaño de la lista y con la cantidad de GPUs. Para ZipCrypto el camino propio es
   el mejor punto de partida, no una regla universal.
-- **El motor de candidatos no está evaluado.** Hay pruebas de correctitud (que el modelo
-  genera cosas que el mangleo no) pero ninguna medición de tasa de recuperación contra un
-  corpus aparte. Cualquier afirmación sobre cuánto mejora la recuperación sería hoy una
-  afirmación sin datos.
+- **El motor de candidatos está medido, y pierde.** Sobre un test held-out y a un millón de
+  intentos: máscaras de hashcat 3,15 %, sus reglas 2,48 %, PassGPT 1,03 %, y el modelo de
+  Markov de este paquete 0,57 %. Los generadores por muestreo pierden contra la enumeración
+  determinista a este presupuesto. Todo el detalle, con el protocolo y las limitaciones, en
+  [`docs/EVALUACION.md`](docs/EVALUACION.md).
 - **ZIP64**: se detecta e informa, pero el soporte es parcial (archivos >4 GB o muchos
   miles de entradas pueden fallar). Los archivos multi-volumen quedan fuera.
 - **No hace fuerza bruta.** No adivina: prueba candidatos que le des, o delega el trabajo
@@ -378,7 +383,8 @@ make check    # ruff check + ruff format --check + pytest
 ## Documentación
 
 - [Metodología de recuperación](docs/METODOLOGIA.md) — el orden correcto y por qué
-- [El formato, en detalle](docs/FORMATO.md) — AES y ZipCrypto, `$zip2$`, trampas
+- [Evaluación de generadores](docs/EVALUACION.md) — qué se midió, qué gana y qué queda abierto
+- [El formato, en detalle](docs/FORMATO.md) — AES y ZipCrypto, `$zip2$`, `$pkzip2$`, trampas
 - [Ética y marco legal](docs/ETICA-Y-LEGAL.md) — uso aceptable
 - [Preguntas frecuentes](docs/FAQ.md)
 

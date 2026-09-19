@@ -90,6 +90,12 @@ palabra base. Cuando tenés un corpus del entorno correcto (una filtración, con
 viejas del mismo lugar), eso llega a lugares a los que las reglas no llegan. Es la misma
 idea que `hcstat` de hashcat o que los modelos de n-gramas de la literatura de adivinación.
 
+Ahora, la parte honesta: eso está probado como *capacidad* (el modelo genera candidatos que
+el mangleo no), **no** como *mejora medida*. No hay una comparación sobre un corpus aparte
+que diga cuántos más aciertos da. Si necesitás ese número, hoy no lo tengo — y es la deuda
+técnica más grande del proyecto. La generación con redes neuronales es lo más avanzado en
+esta área hoy, y este modelo no es eso: es la familia de n-gramas, bien implementada.
+
 ### Lo probé con `--backend hashcat` y falla con un error de OpenCL
 
 Significa que hashcat está instalado pero no encuentra dispositivo. En una máquina sin GPU

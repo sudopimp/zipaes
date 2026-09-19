@@ -35,6 +35,24 @@ pre-commit install  # opcional: corre todo antes de cada commit
 
 ## Áreas donde hace falta ayuda
 
+**La más importante: falta evaluación.** El motor de candidatos (`candidates.py`) tiene pruebas
+de correctitud, pero ninguna medición de tasa de recuperación. Lo que falta, concretamente:
+
+- un arnés que tome un corpus de contraseñas **aparte** del de entrenamiento y mida cuántas
+  recupera con reglas, con mangleo, con el modelo de Markov y con un límite de presupuesto
+  igual para todos;
+- publicado como tabla en el README, con el corpus y el protocolo a la vista, para que el
+  número sea reproducible y no una anécdota.
+
+Sin eso, cualquier afirmación sobre cuánto ayuda el modelo es una afirmación sin datos. Es el
+mismo estándar que se le pide a cualquier trabajo de este área.
+
+Otras:
+
+- **Generación de candidatos con redes neuronales.** La familia de n-gramas (lo que hay hoy
+  acá, igual que `hcstat`) es anterior al estado del arte actual de adivinación de
+  contraseñas. Un backend opcional con un modelo tipo PassGPT, y su medición, sería la mejora
+  de fondo.
 - **Soporte de ZIP64** (>4 GB): hoy se detecta e informa, pero el parseo completo está
   pendiente. Archivos multi-volumen, también.
 - **Verificación con archivos reales de más herramientas**: hay interoperabilidad probada

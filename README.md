@@ -188,6 +188,14 @@ El modelo es la misma idea que `hcstat` de hashcat y que los modelos de n-gramas
 literatura de adivinación: la contraseña tiene estructura, y esa estructura se puede
 aprender. Se entrena una vez y se guarda en JSON; la generación es reproducible con `--seed`.
 
+**Qué está probado y qué no.** Está probado que el modelo genera candidatos que el mangleo
+no puede alcanzar (hay un test que lo mide). Lo que **no** está medido es cuánto mejora la
+tasa de recuperación: no hay comparación sobre un corpus aparte entre reglas, modelo y otras
+técnicas. Es una técnica conocida bien implementada, no una mejora demostrada. Y es
+deliberadamente de la familia de los n-gramas (estilo `hcstat`), **no** de la generación con
+redes neuronales que es hoy lo más avanzado en adivinación de contraseñas. Ver
+[`CONTRIBUTING.md`](CONTRIBUTING.md).
+
 Nada de esto recupera una contraseña aleatoria de 20 caracteres. Contra eso no hay
 estrategia que sirva: es matemática, no perseverancia.
 
@@ -294,8 +302,15 @@ En [`docs/METODOLOGIA.md`](docs/METODOLOGIA.md) está el razonamiento completo.
   deflate**. Si la entrada está almacenada —que es lo que hace `zip` cuando comprimir no
   ayuda, típico en archivos chicos— no hay kernel posible: `zipaes hash` lo dice en vez de
   emitir un hash que nunca va a romper, y `zipaes crack` la resuelve igual con el backend
-  propio. Además, medido en la misma máquina, el camino propio resultó **~3,4× más rápido**
-  que el modo 17200, así que para ZipCrypto la GPU no aporta.
+  propio. Además, en una medición puntual el camino propio resultó **~3,4× más rápido** que el
+  modo 17200 (un archivo, una lista de 20.000 candidatos, una máquina). Ojo con generalizar de
+  ahí: el costo del kernel de hashcat crece con el tamaño del archivo comprimido, y su ventaja
+  crece con el tamaño de la lista y con la cantidad de GPUs. Para ZipCrypto el camino propio es
+  el mejor punto de partida, no una regla universal.
+- **El motor de candidatos no está evaluado.** Hay pruebas de correctitud (que el modelo
+  genera cosas que el mangleo no) pero ninguna medición de tasa de recuperación contra un
+  corpus aparte. Cualquier afirmación sobre cuánto mejora la recuperación sería hoy una
+  afirmación sin datos.
 - **ZIP64**: se detecta e informa, pero el soporte es parcial (archivos >4 GB o muchos
   miles de entradas pueden fallar). Los archivos multi-volumen quedan fuera.
 - **No hace fuerza bruta.** No adivina: prueba candidatos que le des, o delega el trabajo

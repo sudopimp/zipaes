@@ -1,0 +1,57 @@
+# passgpt:ordenado — medición suelta
+#
+# Este generador produce ~11 candidatos/s (recorre el árbol de prefijos del transformer),
+# así que se midió aparte y hasta 2.000 intentos, contra el MISMO test que
+# resultados.json (ventana de cabeza 100.000, misma semilla).
+#
+# Reproducir:
+#   python eval/run_eval.py --passgpt --presupuesto 2000 --ventana-cabeza 100000
+#
+  train 14,319,984 / test 20,000 (<=10 chars: 19,485)
+escribiendo wordlist de train en /tmp/user/1000/zipaes-eval/train_wordlist.txt...
+  train 14,319,984 / test 20,000 (ventana 100,000)
+  passgpt:ordenado: 229/20000 en 2,000 intentos (10.9/s)
+passgpt:ordenado:
+      100 intentos -> 0.075%
+    1,000 intentos -> 0.695%
+    2,000 intentos -> 1.145%
+       7  'asdfghjkl'
+       8  'kittykitty'
+      24  'pineapples'
+      27  'butterfly7'
+      39  'stephanie1'
+      50  'perfection'
+      57  'skateboard'
+      64  '1111111111'
+      71  'lovelygirl'
+      74  'pineapple1'
+      76  'angelique'
+      77  'september1'
+      82  'love123456'
+      86  '23456789'
+      95  'd123456789'
+     103  'crazybitch'
+     109  'alexander2'
+     119  'littlegirl'
+     131  'lifesucks1'
+     134  'chocolate9'
+     135  'bettyboop'
+     140  'snowwhite'
+     142  'teamojesus'
+     161  'princess19'
+     164  'lovesucks1'
+     166  'billabong'
+     176  'chocolate7'
+     178  'snoopdogg'
+     181  'password22'
+     186  'skatergirl'
+     189  'christine1'
+     191  '1234567890'
+     192  'catherine2'
+     195  'crazyangel'
+     196  'jennifer10'
+     197  'prettypink'
+     207  'alexsandra'
+     215  'dominique2'
+     222  'princess10'
+     223  'souljagirl'

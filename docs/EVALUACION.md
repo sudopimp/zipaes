@@ -66,8 +66,9 @@ Comparado en los puntos exactos que se midieron para todos:
 - a **100 intentos** saca 0,075 % contra 0,04 % de `best64` (**1,9×**) y 0,00 % de las máscaras;
 - a **1.000 intentos** saca 0,695 % contra 0,42 % de `best64` (**1,65×**), 0,09 % de
   `markov:ordenado` (**7,7×**) y 0,01 % de las máscaras (**70×**);
-- su **primer acierto aparece en la posición 7**, y entre los 40 primeros hay contraseñas reales
-  (`asdfghjkl`, `1234567890`, `snowwhite`, `billabong`, `snoopdogg`, `princess19`…).
+- sus **primeros aciertos aparecen en las posiciones 7, 8 y 24** (`asdfghjkl`, `kittykitty`,
+  `pineapples`), y entre los 40 primeros hay contraseñas reales (`1234567890`, `snowwhite`,
+  `billabong`, `snoopdogg`, `princess19`, `chocolate9`…).
 
 Con 2.000 intentos llega a 1,145 %. `best64` necesita más de 1.000 y menos de 10.000 para
 alcanzar ese valor, así que **la ventaja del decodificado neuronal se da en el tramo bajo,

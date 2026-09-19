@@ -1,0 +1,21 @@
+# passgpt:ordenado CON EL PROTOCOLO UNIFORME — la medición que destapó el sesgo
+#
+# NO es el número principal (ese está en ../results-cabeza/). Este es el resultado que
+# hizo sospechar: 1 solo acierto en 2.000 intentos, mientras el generador ponía primero
+# contraseñas como 'strawberry' o 'basketball'. Un resultado malo con candidatos
+# buenísimos es señal de que la métrica está mal, no el generador.
+#
+# De ahí salió --ventana-cabeza. Con el test de cabeza, este mismo generador pasa a
+# 229/20000 (1,145%) en los mismos 2.000 intentos: 229x.
+#
+# Reproducir:
+#   python eval/run_eval.py --passgpt --presupuesto 2000
+# (sin --ventana-cabeza: test uniforme sobre las únicas)
+#
+  train 14,319,984 / test 20,000
+  passgpt:ordenado: 1/20000 en 2,000 intentos (11.0/s)
+passgpt:ordenado:
+      100 intentos -> 0.000%
+    1,000 intentos -> 0.000%
+    2,000 intentos -> 0.005%
+    1851  'newlife08'

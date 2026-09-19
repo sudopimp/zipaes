@@ -4,13 +4,25 @@ from __future__ import annotations
 
 import pytest
 
-from zipaes import HASHCAT_MODE, check_hash_format, emit_hash, emit_hash_line, inspect
+from zipaes import (
+    HASHCAT_MODE,
+    HASHCAT_MODE_ZIPCRYPTO,
+    check_hash_format,
+    emit_hash,
+    emit_hash_line,
+    emit_pkzip2,
+    inspect,
+)
 from zipaes.hashfmt import sanity_check
 from zipaes.testkit import write_aes_zip
 
 
 def test_el_modo_de_hashcat_es_el_correcto():
     assert HASHCAT_MODE == 13600
+
+
+def test_el_modo_de_zipcrypto_es_el_correcto():
+    assert HASHCAT_MODE_ZIPCRYPTO == 17200
 
 
 def test_estructura_del_hash(zip_aes256):
@@ -85,6 +97,89 @@ def test_aviso_para_ae1(tmp_path):
 
 def test_sin_avisos_para_ae2(zip_aes256):
     assert sanity_check(inspect(zip_aes256).aes[0]) == []
+
+
+# --- $pkzip2$ (ZipCrypto) --------------------------------------------------- #
+
+
+def _entrada_zc(ruta, indice=0):
+    import zipfile
+
+    from zipaes.zipcrypto import parse_zipcrypto_entry
+
+    with zipfile.ZipFile(ruta) as archivo, open(ruta, "rb") as handle:
+        info = archivo.infolist()[indice]
+        return parse_zipcrypto_entry(handle, info, csize=info.compress_size, usize=info.file_size)
+
+
+def test_pkzip2_estructura_del_hash(zip_zipcrypto_deflate):
+    line = emit_pkzip2(_entrada_zc(zip_zipcrypto_deflate))
+    assert line.startswith("$pkzip2$")
+    assert line.endswith("$/pkzip2$")
+
+    campos = line.split("*")
+    assert campos[0] == "$pkzip2$1"  # firma + cantidad de hashes
+    assert campos[1] == "1"  # largos de checksum
+    assert campos[2] == "2"  # tipo de datos
+    assert campos[3] == "0"  # tipo de magic
+    assert campos[9] == "8"  # compresión: deflate, obligatorio
+    assert campos[14] == "$/pkzip2$"
+
+
+def test_pkzip2_los_checksums_van_desplazados(zip_zipcrypto_deflate):
+    """El byte de control va en el byte ALTO del campo, no en el bajo.
+
+    El kernel compara contra `checksum_from_crc >> 8`. Ponerlo en el byte bajo —que es lo
+    intuitivo— produce un hash que hashcat acepta y nunca rompe.
+    """
+    entry = _entrada_zc(zip_zipcrypto_deflate)
+    campos = emit_pkzip2(entry).split("*")
+
+    assert int(campos[11], 16) == (entry.crc >> 16) & 0xFFFF
+    assert int(campos[12], 16) == entry.dos_time & 0xFFFF
+    # y el byte alto es, literalmente, el byte de control del formato
+    assert entry.check_byte() in (int(campos[11], 16) >> 8, int(campos[12], 16) >> 8)
+
+
+def test_pkzip2_los_datos_empiezan_con_la_cabecera_de_cifrado(zip_zipcrypto_deflate):
+    entry = _entrada_zc(zip_zipcrypto_deflate)
+    campos = emit_pkzip2(entry).split("*")
+    datos = bytes.fromhex(campos[13])
+    assert datos[:12] == entry.crypt_header
+    assert datos[12:] == entry.data
+    assert int(campos[10], 16) == len(datos)  # largo declarado == largo real
+
+
+def test_pkzip2_los_largos_son_los_de_la_entrada(zip_zipcrypto_deflate):
+    entry = _entrada_zc(zip_zipcrypto_deflate)
+    campos = emit_pkzip2(entry).split("*")
+    assert int(campos[4], 16) == entry.csize
+    assert int(campos[5], 16) == entry.usize
+    assert int(campos[6], 16) == entry.crc
+
+
+def test_pkzip2_rechaza_entradas_almacenadas(zip_zipcrypto):
+    """Sin deflate no hay kernel: hay que decirlo, no emitir un hash inútil."""
+    entry = _entrada_zc(zip_zipcrypto)
+    if entry.compression == 8:
+        pytest.skip("la fixture resultó estar comprimida")
+    with pytest.raises(ValueError, match="deflate"):
+        emit_pkzip2(entry)
+
+
+def test_pkzip2_rechaza_entradas_demasiado_grandes(zip_zipcrypto_deflate):
+    with pytest.raises(ValueError, match="no se puede recortar"):
+        emit_pkzip2(_entrada_zc(zip_zipcrypto_deflate), max_data=10)
+
+
+def test_pkzip2_con_prefijo_de_nombre(zip_zipcrypto_deflate):
+    entry = _entrada_zc(zip_zipcrypto_deflate)
+    line = emit_pkzip2(entry, prefix_name=True)
+    assert line.startswith(f"{entry.name}:$pkzip2$")
+
+
+def test_pkzip2_no_es_el_hash_de_aes(zip_zipcrypto_deflate):
+    assert "$zip2$" not in emit_pkzip2(_entrada_zc(zip_zipcrypto_deflate))
 
 
 def test_rechaza_fuerza_invalida():

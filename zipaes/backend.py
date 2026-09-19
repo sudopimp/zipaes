@@ -24,7 +24,12 @@ import tempfile
 from dataclasses import dataclass
 
 from .format import AesEntry
-from .hashfmt import HASHCAT_MODE, emit_hash
+from .hashfmt import (
+    HASHCAT_MODE,
+    HASHCAT_MODE_ZIPCRYPTO,
+    emit_hash,
+    emit_pkzip2,
+)
 
 __all__ = [
     "Tool",
@@ -187,6 +192,22 @@ def _ejecutar(comando: list[str], timeout: int | None) -> subprocess.CompletedPr
         raise BackendError(f"no se pudo ejecutar {comando[0]}: {exc}") from exc
 
 
+def _es_zipcrypto(entry) -> bool:
+    from .zipcrypto import ZipCryptoEntry
+
+    return isinstance(entry, ZipCryptoEntry)
+
+
+def modo_y_hash(entry) -> tuple[int, str]:
+    """Devuelve ``(modo de hashcat, línea de hash)`` para la entrada.
+
+    AES va al modo 13600 con el hash ``$zip2$``; ZipCrypto al 17200 con el ``$pkzip2$``.
+    """
+    if _es_zipcrypto(entry):
+        return HASHCAT_MODE_ZIPCRYPTO, emit_pkzip2(entry)
+    return HASHCAT_MODE, emit_hash(entry)
+
+
 def hashcat_attack(
     entry: AesEntry,
     *,
@@ -219,14 +240,14 @@ def hashcat_attack(
     hash_file = os.path.join(trabajo, "hash.txt")
     pot_file = os.path.join(trabajo, "hashcat.pot")
 
-    hash_line = emit_hash(entry)  # sin prefijo de nombre: hashcat no lo espera
+    modo, hash_line = modo_y_hash(entry)  # sin prefijo de nombre: hashcat no lo espera
     with open(hash_file, "w", encoding="utf-8") as handle:
         handle.write(hash_line + "\n")
 
     comando = [
         binario,
         "-m",
-        str(HASHCAT_MODE),
+        str(modo),
         "--potfile-path",
         pot_file,
         "--quiet",
@@ -282,7 +303,7 @@ def john_attack(
     propio = timeout is None
     trabajo = tempfile.mkdtemp(prefix="zipaes-john-")
     hash_file = os.path.join(trabajo, "hash.txt")
-    hash_line = f"{entry.name}:{emit_hash(entry)}"
+    hash_line = f"{entry.name}:{modo_y_hash(entry)[1]}"
     with open(hash_file, "w", encoding="utf-8") as handle:
         handle.write(hash_line + "\n")
 
@@ -317,17 +338,28 @@ def recover(
 ) -> tuple[str | None, str]:
     """Recupera una contraseña con el backend pedido.
 
-    Devuelve ``(contraseña, backend_usado)``. Con ``backend="auto"`` se elige hashcat si
-    está disponible — salvo en AE-1, donde se prefiere el verificador propio por la
-    limitación de 16 bits del kernel.
+    Devuelve ``(contraseña, backend_usado)``.
+
+    Con ``backend="auto"``:
+
+    - **AES**: se elige hashcat si está disponible, salvo en AE-1, donde se prefiere el
+      verificador propio porque el kernel del modo 13600 compara 16 bits y AE-1 sólo
+      guarda 1 byte de verificación.
+    - **ZipCrypto**: se prefiere el camino propio. El kernel del modo 17200 descifra,
+      descomprime y recalcula el CRC del archivo entero por cada candidato, y medido contra
+      la misma lista el camino propio resultó ~3× más rápido en un solo proceso.
     """
     from .crack import crack as crack_python
+
+    es_zipcrypto = _es_zipcrypto(entry)
 
     eleccion = backend
     if backend == "auto":
         tiene_hashcat = bool(hashcat_path or find_tool("hashcat"))
         tiene_john = bool(john_path or find_tool("john"))
-        if entry.aes_version == 1:
+        if es_zipcrypto:
+            eleccion = "python"
+        elif getattr(entry, "aes_version", None) == 1:
             # el kernel de hashcat compara 16 bits y AE-1 sólo guarda 1 byte de
             # verificación: no es fiable, así que no lo elegimos nosotros
             eleccion = "john" if tiene_john else "python"
@@ -355,6 +387,10 @@ def recover(
     if eleccion == "python":
         if not wordlist:
             raise ValueError("el backend python necesita una wordlist")
+        if es_zipcrypto:
+            from .zipcrypto import crack as crack_zipcrypto
+
+            return crack_zipcrypto(entry, wordlist_path=wordlist), "python-zipcrypto"
         return crack_python(entry, wordlist_path=wordlist), "python"
 
     raise ValueError(f"backend desconocido: {backend!r}")

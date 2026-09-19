@@ -22,6 +22,7 @@ from zipaes.backend import (
     find_tool,
     hashcat_attack,
     john_attack,
+    modo_y_hash,
     recover,
 )
 from zipaes.hashfmt import emit_hash
@@ -376,3 +377,94 @@ def test_integracion_real_con_hashcat_pv_con_cero_inicial(tmp_path, hashcat_real
     assert not linea.startswith(emit_hash(entry) + ":"), (
         "se esperaba que hashcat hubiera normalizado el pv"
     )
+
+
+# --- ZipCrypto (modo 17200) ------------------------------------------------ #
+
+
+def _entrada_zc(ruta, indice=0):
+    import zipfile
+
+    from zipaes.zipcrypto import parse_zipcrypto_entry
+
+    with zipfile.ZipFile(ruta) as archivo, open(ruta, "rb") as handle:
+        info = archivo.infolist()[indice]
+        return parse_zipcrypto_entry(handle, info, csize=info.compress_size, usize=info.file_size)
+
+
+def test_modo_y_hash_para_aes(zip_objetivo):
+    modo, linea = modo_y_hash(inspect(zip_objetivo).aes[0])
+    assert modo == 13600
+    assert linea.startswith("$zip2$")
+    assert linea == emit_hash(inspect(zip_objetivo).aes[0])
+
+
+def test_modo_y_hash_para_zipcrypto(zip_zipcrypto_deflate):
+    modo, linea = modo_y_hash(_entrada_zc(zip_zipcrypto_deflate))
+    assert modo == 17200
+    assert linea.startswith("$pkzip2$")
+
+
+def test_recover_auto_usa_el_camino_propio_en_zipcrypto(
+    zip_zipcrypto_deflate, tmp_path, monkeypatch, clave
+):
+    """En ZipCrypto la elección automática no pasa por hashcat: el kernel es más lento."""
+    llamado = {}
+    monkeypatch.setattr(
+        "zipaes.backend.hashcat_attack",
+        lambda entry, **kw: llamado.setdefault("hashcat", True),
+    )
+    lista = tmp_path / "l.txt"
+    lista.write_text(f"uno\ndos\n{clave}\n", encoding="utf-8")
+
+    encontrada, usado = recover(
+        _entrada_zc(zip_zipcrypto_deflate), wordlist=str(lista), backend="auto"
+    )
+    assert usado == "python-zipcrypto"
+    assert encontrada == clave
+    assert not llamado, "no debería haberse invocado hashcat"
+
+
+def test_recover_zipcrypto_acepta_hashcat_si_se_pide(
+    zip_zipcrypto_deflate, tmp_path, monkeypatch, clave
+):
+    """Pedirlo explícitamente sí lo usa: la elección automática no quita opciones."""
+    monkeypatch.setattr("zipaes.backend.hashcat_attack", lambda entry, **kw: "encontrada-por-gpu")
+    lista = tmp_path / "l.txt"
+    lista.write_text("x\n", encoding="utf-8")
+    encontrada, usado = recover(
+        _entrada_zc(zip_zipcrypto_deflate), wordlist=str(lista), backend="hashcat"
+    )
+    assert usado == "hashcat"
+    assert encontrada == "encontrada-por-gpu"
+
+
+def test_modo_y_hash_rechaza_zipcrypto_sin_deflate(zip_zipcrypto):
+    entry = _entrada_zc(zip_zipcrypto)
+    if entry.compression == 8:
+        pytest.skip("la fixture resultó estar comprimida")
+    with pytest.raises(ValueError, match="deflate"):
+        modo_y_hash(entry)
+
+
+def test_integracion_real_con_hashcat_zipcrypto(
+    zip_zipcrypto_deflate, tmp_path, hashcat_real, clave
+):
+    """La cadena completa contra hashcat de verdad, modo 17200."""
+    lista = tmp_path / "lista.txt"
+    lista.write_text(f"uno\ndos\n{clave}\ntres\n", encoding="utf-8")
+
+    entry = _entrada_zc(zip_zipcrypto_deflate)
+    clave_encontrada = hashcat_attack(
+        entry,
+        wordlist=str(lista),
+        hashcat_path=hashcat_real,
+        workdir=str(tmp_path / "w"),
+        timeout=600,
+    )
+    assert clave_encontrada == clave
+
+    # y lo que devuelve hashcat se confirma con el verificador propio
+    from zipaes.zipcrypto import verify as zc_verify
+
+    assert zc_verify(entry, clave_encontrada)

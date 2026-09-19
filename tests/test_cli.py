@@ -142,12 +142,29 @@ def test_zip_zipcrypto_se_informa_como_tal(zip_zipcrypto, capsys):
     assert "formato=ZipCrypto" in salida
 
 
-def test_hash_sobre_zipcrypto_deriva_a_hashcat(zip_zipcrypto, capsys):
-    """El formato $zip2$ es de AES; para ZipCrypto se explica el camino correcto."""
+def test_hash_sobre_zipcrypto_almacenado_avisa(zip_zipcrypto, capsys):
+    """El modo 17200 sólo ataca deflate: en una entrada almacenada hay que decirlo."""
     assert main(["hash", zip_zipcrypto]) == 1
     error = capsys.readouterr().err
-    assert "17200" in error
-    assert "zipaes crack" in error
+    assert "deflate" in error
+
+
+def test_hash_sobre_zipcrypto_deflate_emite_pkzip2(zip_zipcrypto_deflate, capsys):
+    """Con deflate sí hay hash que emitir, y no es el de AES."""
+    assert main(["hash", zip_zipcrypto_deflate]) == 0
+    salida = capsys.readouterr().out.strip()
+    assert salida.startswith("$pkzip2$")
+    assert salida.endswith("$/pkzip2$")
+    assert "$zip2$" not in salida
+
+
+def test_hash_zipcrypto_en_json(zip_zipcrypto_deflate, capsys):
+    import json
+
+    assert main(["--json", "hash", zip_zipcrypto_deflate]) == 0
+    datos = json.loads(capsys.readouterr().out)
+    assert datos["hashcat_modo"] == 17200
+    assert datos["hashes"][0].startswith("$pkzip2$")
 
 
 def test_backend_lista_las_herramientas(capsys):

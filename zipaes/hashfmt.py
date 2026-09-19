@@ -28,13 +28,16 @@ from __future__ import annotations
 
 from .format import AUTH_CODE_LEN, KEYLEN_BY_STRENGTH, AesEntry
 
-__all__ = ["emit_hash", "emit_hash_line", "HASHCAT_MODE"]
+__all__ = ["emit_hash", "emit_hash_line", "emit_pkzip2", "HASHCAT_MODE", "MAX_DATA_PKZIP2"]
 
 #: modo de hashcat para WinZip AES
 HASHCAT_MODE = 13600
 
-#: modo de hashcat para PKZIP tradicional (ZipCrypto), por referencia
+#: modo de hashcat para PKZIP tradicional (ZipCrypto)
 HASHCAT_MODE_ZIPCRYPTO = 17200
+
+#: el kernel de hashcat no acepta bloques de datos mayores que esto (320 KB)
+MAX_DATA_PKZIP2 = 320 * 1024
 
 
 def emit_hash(entry: AesEntry, *, prefix_name: bool = False) -> str:
@@ -80,3 +83,69 @@ def sanity_check(entry: AesEntry) -> list[str]:
             "no encontrarlo. Usá el verificador propio."
         )
     return warnings
+
+
+# --- ZipCrypto: el hash $pkzip2$ ------------------------------------------- #
+#
+# Estructura, según el parser de hashcat (`module_17200.c`):
+#
+#     $pkzip2$<n>*<largos_de_checksum>*<tipo_de_datos>*<tipo_de_magic>*
+#             <largo_comprimido>*<largo_sin_comprimir>*<crc32>*<offset>*<offset_extra>*
+#             <tipo_de_compresion>*<largo_de_datos>*<checksum_del_crc>*<checksum_de_la_hora>*
+#             <datos>*$/pkzip2$
+#
+# Todo en hexadecimal salvo los campos que el parser lee con `atoi`: el tipo de datos, el
+# de magic y el de compresión.
+#
+# El kernel **exige que el tipo de compresión sea 8** (deflate): si la entrada está
+# almacenada sin comprimir, el modo 17200 de hashcat la rechaza y no hay nada que emitir.
+# Los checksums son los dos valores de control posibles del formato: el byte alto del CRC
+# y el byte alto de la hora DOS, que es lo que el kernel contrasta tras descifrar la
+# cabecera de 12 bytes.
+
+
+def emit_pkzip2(
+    entry,
+    *,
+    max_data: int = MAX_DATA_PKZIP2,
+    prefix_name: bool = False,
+) -> str:
+    """Devuelve el hash ``$pkzip2$`` de una entrada ZipCrypto.
+
+    Levanta ``ValueError`` si la entrada no está comprimida con deflate, porque el kernel
+    de hashcat no sabe atacar las que están almacenadas.
+
+    Con ``max_data`` se recorta el bloque de datos: el kernel no acepta más de 320 KB, y
+    para verificar un candidato alcanza con la cabecera de cifrado y el principio del
+    contenido.
+    """
+    if entry.compression != 8:
+        nombres = {0: "almacenado (sin comprimir)", 1: "shrink", 8: "deflate"}
+        metodo = nombres.get(entry.compression, f"método {entry.compression}")
+        raise ValueError(
+            f"el modo 17200 de hashcat sólo ataca entradas con deflate; esta usa {metodo}. "
+            "Corré `zipaes crack`, que usa el backend propio y sí las soporta."
+        )
+
+    datos = entry.crypt_header + entry.data
+    if len(datos) > max_data:
+        raise ValueError(
+            f"la entrada cifrada mide {len(datos)} bytes y hashcat sólo acepta {max_data}: "
+            "el kernel descifra y descomprime el bloque entero para validar el CRC, así que "
+            "no se puede recortar sin volver el hash inútil. Usá el backend propio."
+        )
+
+    # El kernel compara el byte de control descifrado contra el byte ALTO de estos campos
+    # (mira `checksum_from_crc >> 8`), y opcionalmente el byte anterior contra el bajo.
+    # Por eso van desplazados: el valor es la parte alta del CRC de 32 bits, y la hora DOS
+    # completa de 16 bits.
+    checksum_crc = (entry.crc >> 16) & 0xFFFF
+    checksum_hora = entry.dos_time & 0xFFFF
+
+    cuerpo = (
+        f"$pkzip2$1*1*2*0*"
+        f"{entry.csize:x}*{entry.usize:x}*{entry.crc:x}*0*0*"
+        f"8*{len(datos):x}*{checksum_crc:04x}*{checksum_hora:04x}*"
+        f"{datos.hex()}*$/pkzip2$"
+    )
+    return f"{entry.name}:{cuerpo}" if prefix_name else cuerpo

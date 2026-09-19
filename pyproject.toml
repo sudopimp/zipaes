@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "zipaes"
-version = "1.1.1"
+version = "1.2.0"
 description = "Auditoría, recuperación y extracción de archivos ZIP con cifrado AES (WinZip AE-1/AE-2), que la biblioteca estándar de Python no puede abrir."
 readme = "README.md"
 requires-python = ">=3.10"

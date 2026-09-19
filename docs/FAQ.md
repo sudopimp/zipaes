@@ -73,8 +73,14 @@ incluyan tests. Para cambios de formato, agregá primero un caso de prueba que f
 
 No. ZipCrypto es el cifrado tradicional de PKWARE: un generador de tres claves, sin
 derivación, sin autenticación. `zipaes` lo detecta, lo verifica (por CRC del contenido, que
-es la única comprobación concluyente) y lo ataca. Como no hay que derivar claves, probarlo
-es cientos de miles de veces más barato que AES: el backend propio alcanza y sobra.
+es la única comprobación concluyente), lo ataca y emite su hash `$pkzip2$` para el modo
+17200 de hashcat.
+
+Ahora, si tenés que elegir: para ZipCrypto **el backend propio gana**. El kernel de hashcat
+descifra, descomprime y recalcula el CRC del archivo entero por cada candidato, mientras que
+el camino propio sólo descifra los 12 bytes de la cabecera y reserva el trabajo pesado para
+los pocos candidatos que pasan el filtro. Medido con la misma lista y la misma máquina:
+~36.700 contra ~10.900 candidatos por segundo. Por eso `--backend auto` elige el propio.
 
 ### ¿Para qué sirve el modelo de Markov si ya tengo hashcat con reglas?
 

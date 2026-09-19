@@ -237,9 +237,43 @@ defecto, así que no es un caso raro.
 
 ### Qué NO es
 
-No es AES, así que el hash `$zip2$` no aplica: hashcat lo ataca con `--mode 17200`. Y como
-no hay derivación de claves, probarlo es muchísimo más barato — en la práctica el backend
-propio alcanza y sobra para este formato.
+No es AES, así que el hash `$zip2$` no aplica y el ataque va por otro lado. Como no hay
+derivación de claves, probarlo es muchísimo más barato — en la práctica el backend propio
+alcanza y sobra para este formato.
+
+### El hash `$pkzip2$` (modo 17200 de hashcat)
+
+`zipaes hash` emite el formato que consumen hashcat (modo 17200) y John the Ripper:
+
+```
+$pkzip2$1*1*2*0*5f*2261*9aa527f8*0*0*8*5f*9aa5*7e86*<datos>*$/pkzip2$
+         │ │ │ │  │    │       │  │ │  │   │     │
+         │ │ │ │  │    │       │  │ │  │   │     └─ datos: cabecera de cifrado + contenido
+         │ │ │ │  │    │       │  │ │  │   └─────── checksum de la hora DOS (16 bits)
+         │ │ │ │  │    │       │  │ │  └─────────── checksum del CRC (16 bits)
+         │ │ │ │  │    │       │  │ └────────────── largo de los datos
+         │ │ │ │  │    │       │  └──────────────── compresión: 8 = deflate (obligatorio)
+         │ │ │ │  │    │       └─────────────────── offset extra
+         │ │ │ │  │    └─────────────────────────── offset
+         │ │ │ │  └──────────────────────────────── crc32
+         │ │ │ └─────────────────────────────────── largo sin comprimir
+         │ │ └───────────────────────────────────── largo comprimido
+         │ └─────────────────────────────────────── tipo de magic
+         └───────────────────────────────────────── tipo de datos
+```
+
+Tres cosas que cuestan descubrir:
+
+1. **El byte de control va desplazado.** El kernel compara contra
+   `checksum_from_crc >> 8`, así que el valor es la parte alta del CRC de 32 bits:
+   `(crc >> 16) & 0xffff`. Poner el byte de control en el byte bajo —que es lo natural— da
+   un hash que hashcat **acepta y nunca rompe**. Con `crc32 = eda7a8de` el campo vale
+   `eda7`, que es exactamente lo que trae el vector de autoprueba de hashcat.
+2. **La compresión tiene que ser deflate.** El parser rechaza cualquier otra cosa
+   (`PARSER_PKZIP_CT_UNMATCHED`), y no existe kernel para las entradas almacenadas.
+3. **Los datos no se pueden recortar.** El kernel descifra y descomprime el bloque entero
+   para validar el CRC del archivo, así que un bloque incompleto produce un hash inútil.
+   Hay un tope de 320 KB en el kernel, y por encima de eso no hay nada que emitir.
 
 ---
 

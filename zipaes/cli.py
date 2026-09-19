@@ -35,7 +35,13 @@ from .crack import crack as crack_python
 from .crypto import WrongPassword, verify
 from .extract import extract_all, extract_zipcrypto_all
 from .format import inspect, looks_like_zip
-from .hashfmt import HASHCAT_MODE, emit_hash_line, sanity_check
+from .hashfmt import (
+    HASHCAT_MODE,
+    HASHCAT_MODE_ZIPCRYPTO,
+    emit_hash_line,
+    emit_pkzip2,
+    sanity_check,
+)
 from .selftest import run_selftest
 from .zipcrypto import crack as crack_zipcrypto
 from .zipcrypto import verify as zipcrypto_verify
@@ -315,13 +321,22 @@ def main(argv: list[str] | None = None) -> int:
 
     if command == "hash":
         if kind == "zipcrypto":
-            print(
-                "ZipCrypto no usa el formato $zip2$: hashcat lo ataca con --mode 17200. "
-                "En la practica no hace falta: sin derivacion de claves, 'zipaes crack' "
-                "prueba cientos de miles de candidatos por segundo.",
-                file=sys.stderr,
-            )
-            return EXIT_USAGE
+            try:
+                lines = (
+                    [emit_pkzip2(item, prefix_name=True) for item in entries]
+                    if args.todos
+                    else [emit_pkzip2(entry)]
+                )
+            except ValueError as exc:
+                print(str(exc), file=sys.stderr)
+                return EXIT_USAGE
+            if args.json:
+                _emit({"hashcat_modo": HASHCAT_MODE_ZIPCRYPTO, "hashes": lines}, True)
+            else:
+                for line in lines:
+                    print(line)
+            return EXIT_OK
+
         lines = (
             [emit_hash_line(item, args.archivo) for item in entries]
             if args.todos

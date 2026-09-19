@@ -19,7 +19,7 @@ que tengas autorización explícita. Ver ``docs/ETICA-Y-LEGAL.md``.
 
 from __future__ import annotations
 
-__version__ = "1.1.1"
+__version__ = "1.2.0"
 
 from .candidates import (  # noqa: E402
     MarkovModel,
@@ -52,7 +52,14 @@ from .format import (  # noqa: E402
     looks_like_zip,
     parse_entry,
 )
-from .hashfmt import HASHCAT_MODE, emit_hash, emit_hash_line, sanity_check  # noqa: E402
+from .hashfmt import (  # noqa: E402
+    HASHCAT_MODE,
+    HASHCAT_MODE_ZIPCRYPTO,
+    emit_hash,
+    emit_hash_line,
+    emit_pkzip2,
+    sanity_check,
+)
 from .selftest import check_hash_format, run_selftest  # noqa: E402
 from .testkit import write_aes_zip  # noqa: E402
 from .zipcrypto import (  # noqa: E402
@@ -88,9 +95,11 @@ __all__ = [
     # hash
     "emit_hash",
     "emit_hash_line",
+    "emit_pkzip2",
     "sanity_check",
+    "check_hash_format",
     "HASHCAT_MODE",
-    # ataque
+    "HASHCAT_MODE_ZIPCRYPTO",
     "crack",
     "crack_entry",
     "build_wordlist",

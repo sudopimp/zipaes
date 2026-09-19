@@ -37,16 +37,14 @@ pre-commit install  # opcional: corre todo antes de cada commit
 
 - **Soporte de ZIP64** (>4 GB): hoy se detecta e informa, pero el parseo completo está
   pendiente. Archivos multi-volumen, también.
-- **Emisión del hash `$pkzip2$`** para atacar ZipCrypto con hashcat `--mode 17200` desde
-  acá. Hoy se resuelve con el backend propio, que para este formato alcanza, pero
-  completarlo cerraría el círculo.
 - **Verificación con archivos reales de más herramientas**: hay interoperabilidad probada
-  contra 7-Zip (AES) e Info-ZIP (ZipCrypto). Faltan WinZip, WinRAR y las bibliotecas de
-  otros lenguajes (el crate `zip` de Rust, por ejemplo).
+  contra 7-Zip (AES) e Info-ZIP (ZipCrypto), y la emisión de hashes validada contra hashcat
+  en los modos 13600 y 17200. Faltan WinZip, WinRAR y las bibliotecas de otros lenguajes (el
+  crate `zip` de Rust, por ejemplo).
 - **Pruebas de `fuzz` con `atheris` o `hypothesis`**, para pasar del fuzzing determinista
   actual a cobertura guiada.
-- **Rendimiento del backend propio**: hoy es Python puro; un kernel en C o una extensión
-  con `cffi` lo acercarían a lo que hace hashcat sin depender de la GPU.
+- **Rendimiento del backend propio para AES**: hoy es Python puro; un kernel en C o una
+  extensión con `cffi` lo acercarían a lo que hace hashcat sin depender de la GPU.
 
 ## Estilo de los mensajes de commit
 

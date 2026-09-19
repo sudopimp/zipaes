@@ -69,7 +69,16 @@ zipaes crack archivo.zip -w diccionario.txt --backend auto     # por defecto
 ```
 
 `auto` elige hashcat si está disponible — **salvo en AE-1**, donde el kernel del modo 13600
-no es fiable (§4). En ese caso usa el verificador propio.
+no es fiable (§4), y **salvo en ZipCrypto**, donde el camino propio es más rápido (§5).
+
+**Si es ZipCrypto, no hace falta GPU.** El formato no deriva claves, así que probar un
+candidato es descifrar 12 bytes y comparar un byte. El ataque propio aprovecha eso y reserva
+la validación completa (descifrar todo y verificar el CRC) para los pocos candidatos que
+pasan el filtro. El kernel del modo 17200 de hashcat, en cambio, descifra, descomprime y
+recalcula el CRC del archivo entero por cada candidato. Medido con la misma lista en la
+misma máquina: **~36.700 contra ~10.900 candidatos por segundo**. Por eso `auto` elige el
+camino propio, y el hash `$pkzip2$` (`zipaes hash`) queda para quien quiera usar hashcat
+igual — por ejemplo para repartir el trabajo en varias máquinas.
 
 **Camino sin GPU (CPU, sin dependencias):**
 

@@ -9,7 +9,7 @@ AES (WinZip AE-1 / AE-2) y ZipCrypto, con hashcat y John the Ripper integrados.
 [![CI](https://github.com/sudopimp/zipaes/actions/workflows/ci.yml/badge.svg)](https://github.com/sudopimp/zipaes/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![Licencia](https://img.shields.io/badge/licencia-MIT-green)
-![Tests](https://img.shields.io/badge/tests-199-brightgreen)
+![Tests](https://img.shields.io/badge/tests-216-brightgreen)
 
 </div>
 
@@ -45,7 +45,7 @@ Eso es lo que cubre `zipaes`.
 |---|---|
 | `zipaes info` | Panorama del archivo: tipo de cifrado, entradas, campos AES, ZIP64 |
 | `zipaes verify` | Comprueba una contraseña de forma **concluyente** (auth code en AES, CRC en ZipCrypto) |
-| `zipaes hash` | Emite el hash `$zip2$` para **hashcat** (modo 13600) o **John the Ripper** |
+| `zipaes hash` | Emite el hash para **hashcat** o **John**: `$zip2$` (modo 13600) en AES, `$pkzip2$` (modo 17200) en ZipCrypto |
 | `zipaes crack` | Ataque de diccionario, en local o **delegando en hashcat/John** |
 | `zipaes extract` | Descifra y extrae el contenido (AES y ZipCrypto) |
 | `zipaes wordlist` | Genera candidatos: mangleo tipo PACK, composición y **modelo de Markov** |
@@ -220,6 +220,18 @@ corre a cientos de miles de candidatos por segundo. Su verificación es concluye
 se descifra el contenido y se compara el CRC, no el byte de control de la cabecera (que
 deja pasar uno de cada 256 falsos positivos).
 
+Y si preferís las herramientas externas, el hash también se emite:
+
+```console
+$ zipaes hash clasico.zip
+$pkzip2$1*1*2*0*5f*2261*9aa527f8*0*0*8*5f*9aa5*7e86*09661853…*$/pkzip2$
+
+$ hashcat -m 17200 hash.txt diccionario.txt
+```
+
+Eso sí: el modo 17200 sólo ataca entradas comprimidas con **deflate**. Si el archivo usa
+almacenamiento sin comprimir, `zipaes hash` te lo dice y `zipaes crack` lo resuelve igual.
+
 Detalle del formato en [`docs/FORMATO.md`](docs/FORMATO.md).
 
 ---
@@ -278,8 +290,12 @@ En [`docs/METODOLOGIA.md`](docs/METODOLOGIA.md) está el razonamiento completo.
   que **el ataque por GPU puede no encontrarlo**. Para AE-1 usá `zipaes crack`, que no
   depende del largo del `pv`, y `--backend auto` ya lo elige. `zipaes hash --avisos` te lo
   recuerda.
-- **ZipCrypto no emite hash `$zip2$** (es el formato de AES). Se ataca con el backend
-  propio; el CLI te lo explica si pedís `hash` sobre un archivo ZipCrypto.
+- **ZipCrypto y el modo 17200.** El kernel de hashcat sólo ataca entradas **comprimidas con
+  deflate**. Si la entrada está almacenada —que es lo que hace `zip` cuando comprimir no
+  ayuda, típico en archivos chicos— no hay kernel posible: `zipaes hash` lo dice en vez de
+  emitir un hash que nunca va a romper, y `zipaes crack` la resuelve igual con el backend
+  propio. Además, medido en la misma máquina, el camino propio resultó **~3,4× más rápido**
+  que el modo 17200, así que para ZipCrypto la GPU no aporta.
 - **ZIP64**: se detecta e informa, pero el soporte es parcial (archivos >4 GB o muchos
   miles de entradas pueden fallar). Los archivos multi-volumen quedan fuera.
 - **No hace fuerza bruta.** No adivina: prueba candidatos que le des, o delega el trabajo
@@ -322,7 +338,7 @@ zipaes/
   selftest.py    autocomprobación de punta a punta
   testkit.py     escritor de zips AES para fixtures de prueba
   cli.py         interfaz de línea de comandos
-tests/           199 pruebas con pytest
+tests/           216 pruebas con pytest
 docs/            metodología, formato, ética y preguntas frecuentes
 ```
 
@@ -332,15 +348,16 @@ docs/            metodología, formato, ética y preguntas frecuentes
 make check    # ruff check + ruff format --check + pytest
 ```
 
-- **199 tests**, todos en verde, sin red ni servicios externos.
+- **216 tests**, todos en verde, sin red ni servicios externos.
 - **Interoperabilidad real**: las pruebas crean archivos con **7-Zip** y con **Info-ZIP** y
   los abren con este paquete, y verifican que 7-Zip acepte lo que el kit de pruebas escribe.
   No se valida contra sí mismo.
 - **Fuzzing del parser**: 300 mutaciones deterministas por formato (bit flips, truncados,
   tamaños absurdos) que exigen que el parser no reviente con excepciones que delaten un
   descuido, y que respete los invariantes del formato cuando el parseo tiene éxito.
-- **Integración real con hashcat**, incluido el caso patológico que hashcat normaliza al
-  volcar el resultado: la prueba busca un salt que lo produzca, así no depende del azar.
+- **Integración real con hashcat** en los tres caminos: modo 13600 (AES), modo 13600 con el
+  caso patológico que hashcat normaliza al volcar el resultado, y modo 17200 (ZipCrypto). Las
+  pruebas buscan las fixtures que disparan cada caso, así que no dependen del azar.
 - `ruff` limpio. CI en Python 3.11/3.12/3.13 más macOS y Windows.
 
 ## Documentación

@@ -3,6 +3,49 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado según [SemVer](https://semver.org/lang/es/).
 
+## [1.2.0] — 2026-09-19
+
+Cierra el círculo de ZipCrypto: ya no sólo se ataca en local, también se puede emitir el
+hash que consumen las herramientas externas.
+
+### Agregado
+
+- **Emisión del hash `$pkzip2$`** (`emit_pkzip2`) para hashcat modo **17200** y John the
+  Ripper. `zipaes hash` sobre un archivo ZipCrypto ahora emite, en vez de derivar a otra
+  herramienta a mano.
+- `modo_y_hash()` elige el modo y el formato según el tipo de entrada: 13600 con `$zip2$`
+  para AES, 17200 con `$pkzip2$` para ZipCrypto. `hashcat_attack` y `john_attack` lo usan,
+  así que los dos formatos funcionan por el mismo camino.
+
+### Cambiado
+
+- **La elección automática de backend prefiere el camino propio para ZipCrypto**, y está
+  medido: en la misma máquina y la misma lista, el ataque propio hace ~36.700 candidatos
+  por segundo contra ~10.900 del modo 17200 de hashcat. El kernel de hashcat descifra,
+  descomprime y recalcula el CRC del archivo entero por cada candidato; el camino propio
+  sólo descifra los 12 bytes de la cabecera. Pedir `--backend hashcat` explícitamente sigue
+  funcionando.
+- `recover()` acepta entradas ZipCrypto (antes asumía que toda entrada era AES).
+
+### Notas de implementación
+
+- El modo 17200 **sólo ataca entradas comprimidas con deflate**. Para las almacenadas (que
+  es lo que produce `zip` cuando comprimir no ayuda) no hay kernel posible, así que la
+  emisión falla con un mensaje explícito en vez de producir un hash que nunca va a romper.
+  Es una limitación del formato `$pkzip2$`, no de esta implementación.
+- El byte de control va en el **byte alto** de los campos de checksum: el kernel compara
+  contra `checksum_from_crc >> 8` e `checksum_from_timestamp >> 8`. Ponerlo en el byte bajo
+  —que es lo intuitivo— da un hash que hashcat acepta y nunca rompe. Se descubrió leyendo
+  el kernel y se confirmó contra el vector de autoprueba de hashcat: con `crc32 = eda7a8de`
+  el campo vale `eda7`, o sea `(crc >> 16) & 0xffff`.
+- Los bloques de más de 320 KB no se pueden emitir: el kernel descomprime el bloque entero
+  para validar el CRC, así que recortarlo lo volvería inútil. Se falla explícitamente.
+
+### Pruebas
+
+- Integración real con hashcat modo 17200: emite, ataca y confirma con el verificador
+  propio. Sumado a los dos del modo 13600, hay tres tests que ejercitan hashcat de verdad.
+
 ## [1.1.1] — 2026-09-19
 
 ### Corregido

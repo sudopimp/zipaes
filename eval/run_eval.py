@@ -69,8 +69,14 @@ def construir_generadores(
         )
         trabajo.append(
             (
-                f"markov:orden{orden_markov}",
+                f"markov:orden{orden_markov}:muestreo",
                 generators.generar_markov(modelo, presupuesto),
+            )
+        )
+        trabajo.append(
+            (
+                f"markov:orden{orden_markov}:ordenado",
+                generators.generar_markov_ordenado(modelo, presupuesto),
             )
         )
 

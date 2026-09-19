@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import itertools
 import json
+import math
 import os
 import random
 from collections import Counter, defaultdict
@@ -40,6 +41,10 @@ __all__ = [
 #: marcadores de inicio y fin para el modelo de Markov
 START = "^"
 END = "$"
+
+#: peso que se le da al contexto más específico al interpolar con sus respaldos más cortos.
+#: 0,8 deja un 20 % al nivel siguiente, y así geométricamente hacia abajo.
+LAMBDA_INTERPOLACION = 0.8
 
 #: sustituciones leet habituales
 LEET = {
@@ -204,21 +209,40 @@ class MarkovModel:
         self.order = order
         self.counts: dict[str, Counter] = defaultdict(Counter)
         self.corpus_size = 0
+        #: frecuencia global de cada carácter: el piso del retroceso, para que el modelo
+        #: siempre tenga una respuesta aunque ningún sufijo del contexto se haya visto
+        self.unigram: Counter = Counter()
+        #: memoización de ``distribucion`` por sufijo; la búsqueda ordenada revisita contextos
+        self._cache_dist: dict[str, list[tuple[str, float]]] = {}
 
     # --- entrenamiento ----------------------------------------------------- #
     def train_line(self, word: str) -> None:
+        """Registra la palabra bajo contextos de **todos** los largos, de 1 a ``order``.
+
+        Guardar también los contextos cortos es lo que habilita el retroceso. Sin ellos, un
+        prefijo cuyo contexto de largo completo no apareció en el corpus no se puede
+        continuar: el modelo se corta en seco justo donde más falta hace una estimación
+        aproximada. Es además la forma estándar de construir un modelo de n-gramas — nivel
+        completo más niveles de respaldo—, no un parche.
+        """
         if not word:
             return
+        if self._cache_dist:
+            # el corpus cambió: lo memoizado deja de valer
+            self._cache_dist.clear()
         self.corpus_size += 1
         relleno = START * self.order
         secuencia = relleno + word + END
         for index in range(len(relleno), len(secuencia)):
-            contexto = secuencia[index - self.order : index]
-            self.counts[contexto][secuencia[index]] += 1
+            caracter = secuencia[index]
+            self.unigram[caracter] += 1
+            for largo in range(1, self.order + 1):
+                self.counts[secuencia[index - largo : index]][caracter] += 1
 
     def train(self, lines: Iterable[str]) -> MarkovModel:
         for linea in lines:
             self.train_line(linea.rstrip("\r\n"))
+        self._cache_dist.clear()
         return self
 
     def contexts(self) -> int:
@@ -250,7 +274,35 @@ class MarkovModel:
         modelo.corpus_size = int(data.get("corpus_size", 0))
         for contexto, contador in (data.get("counts") or {}).items():
             modelo.counts[contexto] = Counter(contador)
+        modelo._reconstruir_unigram()
         return modelo
+
+    def _reconstruir_unigram(self) -> None:
+        """Recomputa la frecuencia global desde los contextos de largo 1.
+
+        Va derivada y no serializada, así los modelos guardados antes de que existiera el
+        piso siguen cargando.
+        """
+        self.unigram = Counter()
+        for contexto, contador in self.counts.items():
+            if len(contexto) == 1:
+                self.unigram.update(contador)
+
+    def logprobabilidad(self, palabra: str) -> float:
+        """Log-probabilidad de una palabra completa bajo el modelo, incluido el fin.
+
+        Es la función de puntuación que define el orden de ``iter_ordenado``: sirve para
+        comprobar que ese orden es, en efecto, decreciente.
+        """
+        secuencia = START * self.order
+        total = 0.0
+        for caracter in palabra + END:
+            probabilidad = dict(self.distribucion(secuencia)).get(caracter, 0.0)
+            if probabilidad <= 0.0:
+                return float("-inf")
+            total += math.log(probabilidad)
+            secuencia += caracter
+        return total
 
     @classmethod
     def load(cls, path: str) -> MarkovModel:
@@ -304,6 +356,132 @@ class MarkovModel:
             vistas.add(palabra)
             salida.append(palabra)
         return salida
+
+    # --- enumeración ordenada por probabilidad ----------------------------- #
+
+    def distribucion(self, secuencia: str) -> list[tuple[str, float]]:
+        """Distribución del próximo carácter, interpolando contextos de largo decreciente.
+
+        Se combinan el contexto completo y sus respaldos más cortos con pesos que decaen
+        geométricamente (interpolación estilo Jelinek-Mercer): así un contexto nunca visto se
+        estima con los más generales en vez de quedar sin respuesta.
+
+        El resultado se memoiza por el sufijo de largo ``order``: la distribución sólo depende
+        de esos caracteres, y la búsqueda ordenada revisita los mismos contextos miles de
+        veces.
+        """
+        clave = secuencia[-self.order :] if self.order else ""
+        cacheado = self._cache_dist.get(clave)
+        if cacheado is not None:
+            return cacheado
+
+        niveles: list[Counter] = []
+        for largo in range(min(len(secuencia), self.order), 0, -1):
+            contador = self.counts.get(secuencia[len(secuencia) - largo :])
+            if contador:
+                niveles.append(contador)
+        if self.unigram:
+            # piso: frecuencia global, para que ningún contexto quede sin respuesta
+            niveles.append(self.unigram)
+        if not niveles:
+            self._cache_dist[clave] = []
+            return []
+
+        acumulado: dict[str, float] = {}
+        peso = 1.0
+        for contador in niveles:
+            total = sum(contador.values())
+            if not total:
+                continue
+            for caracter, cuenta in contador.items():
+                acumulado[caracter] = acumulado.get(caracter, 0.0) + peso * (cuenta / total)
+            peso *= 1 - LAMBDA_INTERPOLACION
+
+        # las interpolaciones dejan masa sin repartir (1 + (1-λ) + (1-λ)² … = 1/λ): se
+        # normaliza al final para que las probabilidades sean probabilidades
+        masa = sum(acumulado.values())
+        if masa > 0:
+            acumulado = {caracter: valor / masa for caracter, valor in acumulado.items()}
+
+        resultado = sorted(acumulado.items(), key=lambda par: (-par[1], par[0]))
+        self._cache_dist[clave] = resultado
+        return resultado
+
+    def iter_ordenado(
+        self,
+        *,
+        min_len: int = 4,
+        max_len: int = 24,
+        tope_cola: int = 200_000,
+        ramas: int = 32,
+    ):
+        """Enumera candidatos en orden **decreciente de probabilidad**, no por muestreo.
+
+        Es la diferencia que la evaluación dejó en evidencia: muestrear extrae de la
+        distribución pero no la ordena, así que a presupuesto chico gasta intentos en la cola
+        de su propio modelo, mientras una enumeración determinista recorre primero la zona
+        densa. Esto hace lo segundo usando lo que el modelo aprendió.
+
+        El recorrido es mejor-primero sobre el árbol de prefijos: se mantiene una cola de
+        prefijos con su log-probabilidad y se expande siempre el más probable. Un prefijo es
+        una **cota superior** de todos sus descendientes (la probabilidad sólo baja al
+        alargar), así que sacar de la cola en orden de probabilidad garantiza que lo emitido
+        sale en ese mismo orden.
+
+        Dos cotas que lo hacen viable, las dos aproximadas y las dos declaradas:
+
+        - ``ramas``: de cada contexto se expanden sólo los ``ramas`` caracteres más probables.
+          El vocabulario llega a 214 caracteres y la cola de la distribución aporta una
+          fracción despreciable de la masa, así que recortarla no cambia lo que se emite
+          primero y multiplica la velocidad.
+        - ``tope_cola``: la cola se poda a este tamaño cuando lo duplica, descartando los
+          prefijos menos probables. La poda se hace **cada ``tope_cola`` inserciones**, no en
+          cada una: hacerla siempre convierte el recorrido en un ordenamiento completo por
+          candidato, que es exactamente el error que había antes.
+
+        Con las dos, la enumeración es exacta en la cabeza —la parte que decide una
+        recuperación— y aproximada en la cola larga, que casi nunca se consume.
+
+        Es determinista: no usa azar.
+        """
+        if not self.counts:
+            raise ValueError("el modelo está vacío: entrenalo antes de enumerar")
+
+        import heapq
+
+        relleno = START * self.order
+        # la clave es -log P, así el heap saca primero el más probable
+        cola: list[tuple[float, str]] = [(0.0, relleno)]
+        umbral_poda = tope_cola * 2
+
+        while cola:
+            neg_log, secuencia = heapq.heappop(cola)
+            cuerpo = secuencia[self.order :]
+
+            if cuerpo.endswith(END):
+                candidato = cuerpo[:-1]
+                if len(candidato) >= min_len:
+                    yield candidato
+                continue
+
+            if len(cuerpo) > max_len:
+                continue
+
+            for caracter, probabilidad in self.distribucion(secuencia)[:ramas]:
+                if probabilidad <= 0.0:
+                    continue
+                if caracter == END:
+                    # sólo se cierra si ya tiene el largo mínimo
+                    if len(cuerpo) >= min_len:
+                        heapq.heappush(cola, (neg_log - math.log(probabilidad), secuencia + END))
+                    continue
+                if len(cuerpo) >= max_len:
+                    continue
+                heapq.heappush(cola, (neg_log - math.log(probabilidad), secuencia + caracter))
+
+            if len(cola) > umbral_poda:
+                cola = heapq.nsmallest(tope_cola, cola)
+                heapq.heapify(cola)
 
 
 def train(lines: Iterable[str], order: int = 2, max_lines: int | None = None) -> MarkovModel:

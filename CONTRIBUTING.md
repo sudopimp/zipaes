@@ -35,18 +35,18 @@ pre-commit install  # opcional: corre todo antes de cada commit
 
 ## Áreas donde hace falta ayuda
 
-**La más importante: llevar la evaluación a presupuestos mayores.** Ya está hecha la de 10⁶
-intentos y su resultado es que los generadores por muestreo pierden contra la enumeración
-determinista ([`docs/EVALUACION.md`](docs/EVALUACION.md)). La pregunta que quedó abierta es si
-eso se da vuelta a 10⁷-10⁸, que es donde la literatura reporta ventaja de los modelos
-neuronales. Falta medirlo, no afirmarlo. Costo: 10⁷ son ~80 minutos de GPU; 10⁸, ~13 horas.
+**La más importante: aplicar la enumeración ordenada al modelo neuronal.** Ya está medido que
+ordenar vale 4-6× a los presupuestos donde se decide una recuperación
+([`docs/EVALUACION.md`](docs/EVALUACION.md)), y que PassGPT —el modelo publicado— pierde contra
+la enumeración determinista **porque samplea**, no porque su distribución sea mala. Falta un
+decodificado por haz o por top-k sobre sus probabilidades, que es lo que la variante guiada del
+propio paper propone. No hace falta samplear millones: hace falta puntuar, así que es GPU
+acotada (minutos, no horas).
 
 Otras:
 
-- **Un generador neuronal que gane a este presupuesto.** PassGPT extrae de la distribución pero
-  no la ordena; la mejora de fondo sería un decodificador que priorice por probabilidad
-  (búsqueda por haz, o generación guiada como en la variante guiada del propio paper) en vez de
-  muestreo puro.
+- **Un generador neuronal que ordene.** La pieza que falta arriba, dicha como funcionalidad:
+  `passgpt --ordenado`.
 - **Deduplicar antes de atacar.** Las reglas de hashcat gastan un 26 % de su presupuesto
   repitiendo candidatos y aun así quedan segundas. Es la mejora más barata que quedó sin hacer.
 - **Soporte de ZIP64** (>4 GB): hoy se detecta e informa, pero el parseo completo está

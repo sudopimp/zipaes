@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import itertools
 import random
 
 import pytest
@@ -267,3 +268,145 @@ def test_el_rng_es_el_estandar():
     """El modelo usa random.Random sembrado: reproducible entre plataformas."""
     rng = random.Random(1234)
     assert rng.random() == random.Random(1234).random()
+
+
+# --- enumeración ordenada por probabilidad --------------------------------- #
+#
+# Es la respuesta al hallazgo de la evaluación: los generadores por muestreo pierden contra la
+# enumeración determinista porque no ordenan sus extracciones. Acá se fija que el orden sea el
+# correcto, que es lo único que hace útil a este generador.
+
+
+def test_el_entrenamiento_guarda_contextos_de_todos_los_largos():
+    """Sin contextos cortos no hay retroceso, y sin retroceso la búsqueda se corta."""
+    modelo = train(["abcd"], order=3)
+    for largo in (1, 2, 3):
+        assert any(len(ctx) == largo for ctx in modelo.counts), f"falta el nivel {largo}"
+
+
+def test_la_distribucion_es_una_distribucion():
+    modelo = train(["aaa"] * 50 + ["aab"] * 30, order=2)
+    pares = modelo.distribucion("^^")
+    assert pares
+    assert sum(p for _, p in pares) == pytest.approx(1.0)
+
+
+def test_la_distribucion_esta_ordenada_de_mayor_a_menor():
+    modelo = train(["aaa"] * 50 + ["aab"] * 30 + ["aac"], order=2)
+    probabilidades = [p for _, p in modelo.distribucion("^^")]
+    assert probabilidades == sorted(probabilidades, reverse=True)
+
+
+def test_la_distribucion_usa_retroceso_en_un_contexto_nunca_visto():
+    """Un contexto de largo completo desconocido igual tiene que tener respuesta."""
+    modelo = train(["abcd"] * 10, order=3)
+    pares = modelo.distribucion("zzz")  # trigrama nunca visto
+    assert pares, "el retroceso debería responder con los niveles más generales"
+    assert sum(p for _, p in pares) == pytest.approx(1.0)
+
+
+def test_la_enumeracion_ordenada_respeta_la_frecuencia():
+    """Con un corpus donde el orden es evidente, tiene que salir en ese orden."""
+    modelo = train(["aaa"] * 100 + ["aab"] * 50 + ["aba"] * 10 + ["bbb"], order=2)
+    primeros = list(itertools.islice(modelo.iter_ordenado(min_len=3, max_len=3), 4))
+    assert primeros == ["aaa", "aab", "aba", "bbb"]
+
+
+def test_la_enumeracion_ordenada_generaliza_fuera_del_corpus():
+    """Lo que el muestreo no puede: alcanzar combinaciones que no están en el corpus."""
+    del_corpus = {"aaa", "aab", "aba"}
+    modelo = train(["aaa"] * 100 + ["aab"] * 50 + ["aba"] * 10, order=2)
+    generados = set(itertools.islice(modelo.iter_ordenado(min_len=3, max_len=3), 30))
+    compuestos = generados - del_corpus
+    assert compuestos, "debería componer del patrón aprendido, no sólo repetir el corpus"
+
+
+def test_la_enumeracion_ordenada_es_determinista():
+    modelo = train(["uno", "dos", "tres"] * 20, order=2)
+    a = list(itertools.islice(modelo.iter_ordenado(min_len=3, max_len=4), 25))
+    b = list(itertools.islice(modelo.iter_ordenado(min_len=3, max_len=4), 25))
+    assert a == b
+
+
+def test_la_enumeracion_ordenada_respeta_los_largos():
+    modelo = train(["aaaa", "bbbbb", "cccccc", "ddddddd"] * 10, order=2)
+    generados = list(itertools.islice(modelo.iter_ordenado(min_len=5, max_len=6), 60))
+    assert generados
+    assert all(5 <= len(c) <= 6 for c in generados), sorted({len(c) for c in generados})
+
+
+def test_la_enumeracion_ordenada_no_repite():
+    modelo = train(["alfa", "beta", "gama"] * 30, order=2)
+    generados = list(itertools.islice(modelo.iter_ordenado(min_len=4, max_len=5), 60))
+    assert len(generados) == len(set(generados))
+
+
+def test_la_enumeracion_ordenada_se_agota():
+    modelo = train(["ab", "cd"], order=1)
+    generados = list(modelo.iter_ordenado(min_len=2, max_len=2))
+    assert generados, "debería emitir algo"
+    assert len(generados) == len(set(generados))
+
+
+def test_la_enumeracion_ordenada_falla_con_modelo_vacio():
+    with pytest.raises(ValueError):
+        list(MarkovModel(order=2).iter_ordenado())
+
+
+def test_la_memoizacion_no_da_resultados_viejos_tras_reentrenar():
+    """Si el corpus cambia, lo memoizado tiene que dejar de valer."""
+    modelo = train(["aaa"] * 50, order=2)
+    antes = dict(modelo.distribucion("^^"))
+    modelo.train(["bbb"] * 50)
+    despues = dict(modelo.distribucion("^^"))
+    assert antes != despues
+    assert despues.get("b", 0) > antes.get("b", 0)
+
+
+def test_el_ordenado_llega_antes_que_el_muestreo_a_la_cabeza():
+    """La garantía del cambio, comprobada de forma determinista.
+
+    En vez de comparar contra una corrida de muestreo —que depende de la suerte de la
+    semilla, como se vio al escribir esto— se verifica **la propiedad que define el
+    generador**: que las puntuaciones del flujo ordenado no suban. El beneficio medido
+    (cuántos intentos ahorra) es lo que mide la evaluación, sobre contraseñas reales.
+
+    Y se comprueba además que el primero del flujo es el candidato más probable entre los
+    del corpus, que es exactamente lo que el muestreo no garantiza.
+    """
+    cabeza = ["alfa"] * 30 + ["beta"] * 20 + ["gama"] * 10
+    cola = [f"cola{i:03d}" for i in range(300)]
+    modelo = train(cabeza + cola, order=2)
+
+    generados = list(itertools.islice(modelo.iter_ordenado(min_len=4, max_len=4), 150))
+    assert generados
+
+    puntajes = [modelo.logprobabilidad(c) for c in generados]
+    assert puntajes == sorted(puntajes, reverse=True), (
+        "el flujo tiene que venir en orden decreciente de probabilidad"
+    )
+
+    mas_probable_del_corpus = max(set(cabeza + cola), key=modelo.logprobabilidad)
+    assert generados[0] == mas_probable_del_corpus
+
+
+def test_la_logprobabilidad_castiga_lo_imposible():
+    modelo = train(["abcd"] * 10, order=2)
+    assert modelo.logprobabilidad("abcd") > float("-inf")
+    assert modelo.logprobabilidad("zzzz") == float("-inf") or (
+        modelo.logprobabilidad("zzzz") < modelo.logprobabilidad("abcd")
+    )
+
+
+def test_un_modelo_guardado_y_cargado_conserva_el_piso():
+    """El piso del retroceso va derivado, así que tiene que sobrevivir al guardado."""
+    import tempfile
+
+    modelo = train(["abcd"] * 10, order=3)
+    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as tmp:
+        ruta = tmp.name
+    modelo.save(ruta)
+    recuperado = MarkovModel.load(ruta)
+
+    assert recuperado.unigram, "el piso tiene que reconstruirse al cargar"
+    assert recuperado.distribucion("zzz"), "y responder a un contexto nunca visto"

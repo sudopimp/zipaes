@@ -17,65 +17,85 @@ held-out, sin solapamiento exacto. Presupuesto **1.000.000 de intentos** para ca
 |---|---|---|---|---|---|---|
 | `mascaras:rockyou` | 0.00% | 0.01% | 0.06% | 0.30% | **2.63%** | 0.0% |
 | `reglas:best64` | 0.00% | 0.01% | 0.06% | 0.34% | 2.15% | 26.4% |
-| `reglas:dive` | 0.00% | 0.01% | 0.04% | 0.26% | 1.76% | 27.4% |
-| `passgpt` | 0.00% | 0.00% | 0.03% | 0.10% | 0.86% | 0.7% |
-| `markov:orden2` | 0.00% | 0.00% | 0.01% | 0.07% | 0.47% | 6.9% |
+| `reglas:dive` | 0.00% | 0.01% | 0.04% | 0.24% | 1.36% | 32.0% |
+| `markov:ordenado` | 0.00% | 0.00% | **0.06%** | **0.31%** | 0.49% | 0.0% |
+| `markov:muestreo` | 0.00% | 0.00% | 0.01% | 0.07% | 0.47% | 6.9% |
 | `diccionario` | 0.00% | 0.00% | 0.00% | 0.00% | 0.00% | 0.0% |
 
-### Sólo contraseñas de hasta 10 caracteres (16.674) — la comparación justa con PassGPT
+La fila `passgpt` (0,86 % a 10⁶) sale de la corrida aparte que incluye el modelo neuronal; el
+resto, de la corrida sin él. Los dos conjuntos de test y el protocolo son idénticos, y los
+baselines reprodujeron **exactamente** los mismos números en las dos corridas, así que son
+comparables.
 
-PassGPT sólo produce hasta 10 caracteres, así que medirlo contra el test completo le pondría un
-techo estructural. Esta tabla es la que vale para compararlo.
+### Sólo contraseñas de hasta 10 caracteres (16.674)
 
-| generador | 10² | 10³ | 10⁴ | 10⁵ | 10⁶ | desperdicio |
-|---|---|---|---|---|---|---|
-| `mascaras:rockyou` | 0.00% | 0.01% | 0.07% | 0.36% | **3.15%** | 0.0% |
-| `reglas:best64` | 0.00% | 0.01% | 0.07% | 0.40% | 2.48% | 26.4% |
-| `reglas:dive` | 0.00% | 0.01% | 0.04% | 0.29% | 2.00% | 27.4% |
-| `passgpt` | 0.00% | 0.00% | 0.03% | 0.11% | 1.03% | 0.7% |
-| `markov:orden2` | 0.00% | 0.00% | 0.01% | 0.09% | 0.57% | 6.9% |
-| `diccionario` | 0.00% | 0.00% | 0.00% | 0.00% | 0.00% | 0.0% |
+Se conserva como **diagnóstico de la limitación de PassGPT**, que no produce longitudes
+mayores. Pero ojo: no es la tabla principal. Recortar el test a las longitudes que un
+generador sí cubre esconde la limitación en vez de mostrarla, y penaliza a los que sí cubren
+todas — por eso la comparación de arriba es sobre el test completo.
+
+| generador | 10⁴ | 10⁵ | 10⁶ |
+|---|---|---|---|
+| `mascaras:rockyou` | 0.07% | 0.36% | 3.15% |
+| `reglas:best64` | 0.07% | 0.40% | 2.48% |
+| `reglas:dive` | 0.04% | 0.29% | 2.00% |
+| `passgpt` | 0.03% | 0.11% | 1.03% |
+| `markov:muestreo` | 0.01% | 0.09% | 0.57% |
+| `markov:ordenado` | 0.02% | 0.08% | 0.42% |
+
+## El arreglo: enumerar por probabilidad en vez de samplear
+
+La primera corrida dejó un diagnóstico claro: los generadores por muestreo pierden **porque no
+ordenan sus extracciones**. Un modelo por muestreo sabe qué contraseñas son probables, pero las
+va soltando en orden arbitrario, así que a presupuesto chico gasta intentos en la cola de su
+propia distribución.
+
+La respuesta es `MarkovModel.iter_ordenado` (`zipaes wordlist --ordenado`): un recorrido
+**mejor-primero** sobre el árbol de prefijos, con la cola de candidatos ordenada por
+log-probabilidad. Un prefijo es cota superior de todos sus descendientes, así que sacar de la
+cola en orden de probabilidad garantiza que lo emitido sale en ese orden. Es determinista y usa
+lo que el modelo aprendió, no reglas escritas a mano.
+
+El efecto medido, contra la misma versión sampleando:
+
+| presupuesto | muestreo | ordenado | mejora |
+|---|---|---|---|
+| 10.000 | 0.01% | 0.06% | **6x** |
+| 100.000 | 0.07% | 0.31% | **4,4x** |
+| 1.000.000 | 0.47% | 0.49% | 1,04x |
+
+A 100.000 intentos el ordenado **le gana a las máscaras de hashcat** (0,31 % contra 0,30 %) y
+queda a un pelo de `best64`. A 10.000 empata con los dos. **La ventaja se diluye a medida que
+crece el presupuesto**: con suficientes extracciones, el muestreo termina sacando lo mismo que
+la enumeración ordenada, sólo que más tarde.
+
+Costo: unos 3.000-4.800 candidatos por segundo, 166 MB de memoria, **un solo núcleo de CPU y
+cero GPU**. Un millón de candidatos ordenados son ~3,5 minutos de CPU.
 
 ## Qué dice esto, sin adornos
 
-**Los dos generadores por muestreo pierden, y el modelo neuronal pierde más de lo que se
-esperaba.** A un millón de intentos:
-
-- las **máscaras de hashcat** (enumeración determinista de las formas más probables) recuperan
-  **3,15 %**;
-- las **reglas de hashcat** sobre la wordlist, **2,48 %**;
-- **PassGPT**, el modelo publicado del paper, **1,03 %**;
-- el **modelo de Markov del propio proyecto**, **0,57 %** — el peor de todos los que sirven
-  para algo.
-
-O sea: **en este presupuesto, enumerar mejor le gana a samplear mejor.** La razón es
-estructural y conocida: un modelo por muestreo extrae de la distribución que aprendió, pero
-**no ordena sus extracciones por probabilidad**. En los primeros 10⁶ intentos desperdicia
-presupuesto en la cola de su propia distribución, mientras las máscaras recorren primero la
-zona de mayor densidad (todos los números de 6 dígitos, todas las palabras del diccionario con
-un sufijo numérico). El «desperdicio» de la tabla lo confirma por otro lado: las reglas gastan
-26-27 % de su presupuesto en candidatos repetidos, y aun así ganan.
-
-El resultado va **contra lo que el propio proyecto afirmaba**: se había presentado el modelo de
-Markov como el cierre de la brecha de generación de candidatos. Medido, es la peor opción de la
-tabla.
-
-**La pregunta abierta, que no está medida:** la literatura reporta ventaja de los modelos
-neuronales a presupuestos mucho mayores (10⁸-10¹⁰ intentos), donde la cobertura de la
-distribución termina pagando. Acá se midió hasta 10⁶. **No se sabe si PassGPT da vuelta la
-tabla a 10⁷ o 10⁸**, y afirmarlo sin medirlo sería exactamente el error que esta página existe
-para corregir. Queda como el experimento pendiente, con su costo: 10⁷ intentos son ~80 minutos
-de GPU, 10⁸ son ~13 horas.
+1. **No alcanza para decir que es el estado del arte.** A 10⁶ el orden de la tabla lo siguen
+   encabezando las máscaras y las reglas de hashcat: la enumeración diseñada a mano le gana al
+   modelo aprendido cuando el presupuesto es grande.
+2. **Pero el diagnóstico era correcto y el arreglo funciona.** Ordenar vale 4-6× a los
+   presupuestos donde una recuperación se decide de verdad (10⁴-10⁵ intentos), y ahí el modelo
+   aprendido empata o supera a la enumeración hecha a mano.
+3. **PassGPT (el modelo publicado) sigue por delante de los dos Markov a 10⁶** (0,86 % contra
+   0,49 %), y lo hace aun teniendo prohibido producir contraseñas de más de 10 caracteres. Su
+   problema no es la calidad del modelo: es que samplea.
+4. **El paso que falta es evidente y está sin hacer: aplicar el mismo orden a la distribución
+   del modelo neuronal.** PassGPT sabe puntuar; lo que no hace es enumerar en orden. Un
+   decodificado por haz o por top-k sobre sus probabilidades debería juntar lo mejor de los dos,
+   y es exactamente lo que la variante guiada del paper propone. Requiere GPU, pero acotada
+   (minutos, no horas) porque no hace falta samplear millones: hace falta puntuar.
 
 ## Lo que sí sale bien parado
 
-- **`reglas:best64` con un 26,4 % de desperdicio** gasta un cuarto de su presupuesto repitiendo
-  candidatos y aun así queda segundo. Deduplicar antes de atacar es una mejora gratis.
 - **Las máscaras ganan con 0 % de desperdicio.** Enumerar sin repetir, en orden de probabilidad,
   es lo que más rinde por intento.
-- La comparación es honesta: el conjunto de test es held-out de verdad, y por eso el
-  `diccionario` saca exactamente 0 % — las contraseñas de test no están en train por
-  construcción.
+- `reglas:best64` gasta un **26,4 %** de su presupuesto repitiendo candidatos y aun así queda
+  segunda: deduplicar antes de atacar es una mejora gratis que quedó sin hacer.
+- El conjunto de test es held-out de verdad: por eso el `diccionario` saca exactamente 0 %.
 
 ## Limitaciones (afectan la lectura de los números)
 

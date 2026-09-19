@@ -183,22 +183,31 @@ zipaes wordlist -o lista.txt --model modelo.json --count 500000 --seed 42
 | **Mangleo (PACK)** | mayúsculas, leet, inversión, duplicación, sufijos, años, prefijos |
 | **Composición (PRINCE)** | `juan` + `perez` → `juanperez`, `perez_juan`, `juan2025`… |
 | **Modelo de Markov** | aprende la distribución de caracteres de un corpus y samplea candidatos nuevos |
+| **Modelo ordenado** | ídem, pero enumera por probabilidad **decreciente** en vez de samplear |
+
+El modo `--ordenado` es el que más rinde a presupuesto bajo, y la diferencia está medida: con
+10.000 intentos saca **6×** más contraseñas que samplear, y con 100.000 **4,4×** — alcanzando a
+las máscaras de hashcat. Es determinista y no gasta presupuesto en candidatos repetidos.
+
+```bash
+zipaes wordlist -o ordenada.txt --train rockyou.txt --count 1000000 --ordenado
+```
 
 El modelo es la misma idea que `hcstat` de hashcat y que los modelos de n-gramas de la
 literatura de adivinación: la contraseña tiene estructura, y esa estructura se puede
 aprender. Se entrena una vez y se guarda en JSON; la generación es reproducible con `--seed`.
 
 **Qué está probado y qué no.** Está probado que el modelo genera candidatos que el mangleo
-no puede alcanzar (hay un test que lo mide). Y **ahora también está medido cuánto ayuda**, con
-un resultado que no favorece al proyecto: a un millón de intentos y sobre contraseñas
-held-out, el modelo recupera **0,57 %** contra **3,15 %** de las máscaras de hashcat y
-**2,48 %** de sus reglas. Es el peor generador de la tabla entre los que sirven para algo.
+no puede alcanzar (hay un test que lo mide). Y está **medido cuánto ayuda**, con un resultado
+que mezcla: a un millón de intentos y sobre contraseñas held-out, el modelo recupera **0,49 %**
+contra **2,63 %** de las máscaras de hashcat y **2,15 %** de sus reglas. Pero a 10.000-100.000
+intentos —donde una recuperación se decide de verdad— el modo **ordenado** empata con las
+máscaras y las supera a 100.000, con **4-6× de ventaja** sobre samplear.
 
-La razón es estructural: un modelo por muestreo extrae de la distribución que aprendió pero
-**no ordena sus extracciones por probabilidad**, así que a presupuestos bajos desperdicia
-intentos en la cola de su propia distribución, mientras la enumeración determinista recorre
-primero la zona de mayor densidad. La comparación completa, con PassGPT incluido, está en
-[`docs/EVALUACION.md`](docs/EVALUACION.md).
+La razón de fondo: un modelo por muestreo extrae de la distribución que aprendió pero **no
+ordena sus extracciones**, así que a presupuesto chico desperdicia intentos en la cola de su
+propia distribución. Por eso existe `--ordenado`, que enumera por probabilidad decreciente. La
+comparación completa está en [`docs/EVALUACION.md`](docs/EVALUACION.md).
 
 Nada de esto recupera una contraseña aleatoria de 20 caracteres. Contra eso no hay
 estrategia que sirva: es matemática, no perseverancia.
@@ -311,11 +320,11 @@ En [`docs/METODOLOGIA.md`](docs/METODOLOGIA.md) está el razonamiento completo.
   ahí: el costo del kernel de hashcat crece con el tamaño del archivo comprimido, y su ventaja
   crece con el tamaño de la lista y con la cantidad de GPUs. Para ZipCrypto el camino propio es
   el mejor punto de partida, no una regla universal.
-- **El motor de candidatos está medido, y pierde.** Sobre un test held-out y a un millón de
-  intentos: máscaras de hashcat 3,15 %, sus reglas 2,48 %, PassGPT 1,03 %, y el modelo de
-  Markov de este paquete 0,57 %. Los generadores por muestreo pierden contra la enumeración
-  determinista a este presupuesto. Todo el detalle, con el protocolo y las limitaciones, en
-  [`docs/EVALUACION.md`](docs/EVALUACION.md).
+- **El motor de candidatos está medido.** Sobre un test held-out: a un millón de intentos
+  máscaras de hashcat 2,63 %, sus reglas 2,15 %, PassGPT 0,86 %, y el modelo de Markov de este
+  paquete 0,49 %. Pero **a 10⁴-10⁵ intentos el modo ordenado empata con las máscaras y las
+  supera a 10⁵**, con 4-6× de ventaja sobre samplear. Todo el detalle, con el protocolo y las
+  limitaciones, en [`docs/EVALUACION.md`](docs/EVALUACION.md).
 - **ZIP64**: se detecta e informa, pero el soporte es parcial (archivos >4 GB o muchos
   miles de entradas pueden fallar). Los archivos multi-volumen quedan fuera.
 - **No hace fuerza bruta.** No adivina: prueba candidatos que le des, o delega el trabajo

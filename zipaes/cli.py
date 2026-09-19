@@ -23,6 +23,7 @@ Códigos de salida:
 from __future__ import annotations
 
 import argparse
+import itertools
 import json
 import os
 import sys
@@ -169,6 +170,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--digits", action="store_true", help="agregar numeros de 2 y 4 digitos")
     p.add_argument("--order", type=int, default=2, help="orden del modelo de Markov (1-4)")
     p.add_argument("--max-lines", type=int, default=None, help="tope de lineas a entrenar")
+    p.add_argument(
+        "--ordenado",
+        action="store_true",
+        help="enumerar el modelo por probabilidad decreciente en vez de samplear (mejor a "
+        "presupuesto bajo; determinista)",
+    )
+    p.add_argument("--min-len", type=int, default=4, help="largo minimo con --ordenado")
+    p.add_argument("--max-len", type=int, default=24, help="largo maximo con --ordenado")
 
     sub.add_parser("backend", help="herramientas externas detectadas")
 
@@ -225,14 +234,32 @@ def _cmd_wordlist(args) -> int:
         if args.save_model:
             modelo.save(args.save_model)
 
-    candidatos = build_candidates(
-        bases=args.base,
-        model=modelo,
-        model_count=args.count,
-        seed=args.seed,
-        compose_bases=not args.no_compose,
-        digits=args.digits,
-    )
+    if args.ordenado:
+        if modelo is None:
+            print(
+                "--ordenado necesita un modelo: pasá --train o --model",
+                file=sys.stderr,
+            )
+            return EXIT_USAGE
+        if not args.count:
+            print("--ordenado necesita --count (cuántos candidatos enumerar)", file=sys.stderr)
+            return EXIT_USAGE
+        candidatos = list(
+            itertools.islice(
+                modelo.iter_ordenado(min_len=args.min_len, max_len=args.max_len),
+                args.count,
+            )
+        )
+    else:
+        candidatos = build_candidates(
+            bases=args.base,
+            model=modelo,
+            model_count=args.count,
+            seed=args.seed,
+            compose_bases=not args.no_compose,
+            digits=args.digits,
+        )
+
     if not candidatos:
         print(
             "no se genero ningun candidato: hacen falta palabras base, un corpus o un modelo",
@@ -248,6 +275,9 @@ def _cmd_wordlist(args) -> int:
         "candidatos": len(candidatos),
         "bases": len(args.base),
     }
+    if args.ordenado:
+        payload["modo"] = "ordenado por probabilidad decreciente"
+        payload["determinista"] = True
     if args.count:
         payload["solicitados_al_modelo"] = args.count
         if len(candidatos) < args.count:

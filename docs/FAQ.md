@@ -90,11 +90,25 @@ palabra base. Cuando tenés un corpus del entorno correcto (una filtración, con
 viejas del mismo lugar), eso llega a lugares a los que las reglas no llegan. Es la misma
 idea que `hcstat` de hashcat o que los modelos de n-gramas de la literatura de adivinación.
 
-Ahora, la parte honesta: eso está probado como *capacidad* (el modelo genera candidatos que
-el mangleo no), **no** como *mejora medida*. No hay una comparación sobre un corpus aparte
-que diga cuántos más aciertos da. Si necesitás ese número, hoy no lo tengo — y es la deuda
-técnica más grande del proyecto. La generación con redes neuronales es lo más avanzado en
-esta área hoy, y este modelo no es eso: es la familia de n-gramas, bien implementada.
+Y ahora está medido, con un resultado mixto: a un millón de intentos las máscaras y las reglas
+de hashcat siguen ganando; pero a **10.000-100.000 intentos —donde una recuperación se decide
+de verdad— el modo `--ordenado` empata con las máscaras, las supera a 100.000, y saca 4-6×
+más contraseñas que samplear.** Números, protocolo y limitaciones en
+[`EVALUACION.md`](EVALUACION.md).
+
+### ¿Qué es `--ordenado` y por qué tanta diferencia?
+
+`--ordenado` enumera el modelo **por probabilidad decreciente** en vez de samplear. La
+diferencia suena menor y no lo es: un modelo por muestreo sabe qué contraseñas son probables,
+pero las va soltando en orden arbitrario, así que a presupuesto chico gasta intentos en la cola
+de su propia distribución. Enumerar por probabilidad recorre primero la zona densa —usa lo que
+el modelo aprendió, sin reglas escritas a mano— y además es determinista y no repite.
+
+```bash
+zipaes wordlist -o ordenada.txt --train rockyou.txt --count 1000000 --ordenado
+```
+
+Cuesta unos 3.500 candidatos por segundo y un núcleo de CPU. Nada de GPU.
 
 ### Lo probé con `--backend hashcat` y falla con un error de OpenCL
 

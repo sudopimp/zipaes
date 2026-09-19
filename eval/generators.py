@@ -190,6 +190,23 @@ def generar_markov(modelo, limite: int, *, seed: int = 1234, lote: int = 50_000)
             yield candidato
 
 
+def generar_markov_ordenado(
+    modelo, limite: int, *, min_len: int = 4, max_len: int = 24
+) -> Iterator[str]:
+    """Enumera del modelo de Markov **en orden decreciente de probabilidad**.
+
+    Es la respuesta al hallazgo de la evaluación: los generadores por muestreo pierden contra
+    la enumeración determinista porque no ordenan sus extracciones. Este sí ordena, y además
+    usa lo que el modelo aprendió en vez de reglas escritas a mano. Determinista, sin azar.
+    """
+    for indice, candidato in enumerate(
+        modelo.iter_ordenado(min_len=min_len, max_len=max_len), start=1
+    ):
+        yield candidato
+        if indice >= limite:
+            return
+
+
 def ruta_wordlist_de(palabras: list[str], destino: str) -> str:
     """Vuelca una lista de palabras a disco (hashcat necesita un archivo)."""
     if not palabras:

@@ -9,7 +9,7 @@
     "semilla": 20260919,
     "orden_markov": 2,
     "tope_train_markov": null,
-    "passgpt": false
+    "passgpt": true
   },
   "resultados": [
     {
@@ -19,8 +19,8 @@
       "unicos": 1000000,
       "encontradas": 0,
       "desperdicio_pct": 0.0,
-      "intentos_por_segundo": 2322674.4,
-      "segundos": 0.43,
+      "intentos_por_segundo": 1991141.1,
+      "segundos": 0.5,
       "curva_pct": {
         "100": 0.0,
         "1000": 0.0,
@@ -37,8 +37,8 @@
       "unicos": 736109,
       "encontradas": 430,
       "desperdicio_pct": 26.39,
-      "intentos_por_segundo": 313431.6,
-      "segundos": 3.19,
+      "intentos_por_segundo": 356421.2,
+      "segundos": 2.81,
       "curva_pct": {
         "100": 0.0,
         "1000": 0.005,
@@ -52,18 +52,18 @@
       "generador": "reglas:dive",
       "tamano_test": 20000,
       "intentos": 1000000,
-      "unicos": 680463,
-      "encontradas": 273,
-      "desperdicio_pct": 31.95,
-      "intentos_por_segundo": 363665.5,
-      "segundos": 2.75,
+      "unicos": 726334,
+      "encontradas": 352,
+      "desperdicio_pct": 27.37,
+      "intentos_por_segundo": 311963.0,
+      "segundos": 3.21,
       "curva_pct": {
         "100": 0.0,
-        "1000": 0.005,
-        "10000": 0.04,
-        "100000": 0.24,
-        "1000000": 1.365,
-        "10000000": 1.365
+        "1000": 0.01,
+        "10000": 0.035,
+        "100000": 0.26,
+        "1000000": 1.76,
+        "10000000": 1.76
       }
     },
     {
@@ -73,8 +73,8 @@
       "unicos": 1000000,
       "encontradas": 526,
       "desperdicio_pct": 0.0,
-      "intentos_por_segundo": 245313.6,
-      "segundos": 4.08,
+      "intentos_por_segundo": 257831.9,
+      "segundos": 3.88,
       "curva_pct": {
         "100": 0.0,
         "1000": 0.005,
@@ -85,14 +85,14 @@
       }
     },
     {
-      "generador": "markov:orden2:muestreo",
+      "generador": "markov:orden2",
       "tamano_test": 20000,
       "intentos": 1000000,
       "unicos": 931109,
       "encontradas": 95,
       "desperdicio_pct": 6.89,
-      "intentos_por_segundo": 11481.9,
-      "segundos": 87.09,
+      "intentos_por_segundo": 11117.9,
+      "segundos": 89.95,
       "curva_pct": {
         "100": 0.0,
         "1000": 0.0,
@@ -103,21 +103,21 @@
       }
     },
     {
-      "generador": "markov:orden2:ordenado",
+      "generador": "passgpt",
       "tamano_test": 20000,
-      "intentos": 965129,
-      "unicos": 965129,
-      "encontradas": 98,
-      "desperdicio_pct": 0.0,
-      "intentos_por_segundo": 3019.8,
-      "segundos": 319.6,
+      "intentos": 1000000,
+      "unicos": 993189,
+      "encontradas": 172,
+      "desperdicio_pct": 0.68,
+      "intentos_por_segundo": 2126.1,
+      "segundos": 470.35,
       "curva_pct": {
         "100": 0.0,
         "1000": 0.0,
-        "10000": 0.055,
-        "100000": 0.31,
-        "1000000": 0.49,
-        "10000000": 0.49
+        "10000": 0.025,
+        "100000": 0.095,
+        "1000000": 0.86,
+        "10000000": 0.86
       }
     }
   ]

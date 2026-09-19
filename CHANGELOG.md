@@ -3,6 +3,70 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado según [SemVer](https://semver.org/lang/es/).
 
+## [1.3.0] — 2026-09-19
+
+Cierra el diagnóstico de la evaluación: el problema de los generadores por muestreo era **el
+orden**, no el modelo. Se arregla eso y se mide cuánto vale.
+
+### Agregado
+
+- **`MarkovModel.iter_ordenado`** — enumeración por probabilidad decreciente con un recorrido
+  mejor-primero sobre el árbol de prefijos. Un prefijo es cota superior de todos sus
+  descendientes, así que sacar de la cola en orden de probabilidad garantiza que lo emitido
+  sale en ese orden. Determinista, sin gasto en candidatos repetidos.
+  En el CLI: `zipaes wordlist --ordenado --count N`.
+- **`MarkovModel.distribucion`** — distribución del próximo carácter con interpolación tipo
+  Jelinek-Mercer sobre contextos de largo decreciente, normalizada a 1.
+- **`MarkovModel.logprobabilidad`** — puntuación de una contraseña completa; es la función que
+  define el orden y la que usan los tests para verificarlo.
+
+### Cambiado
+
+- **El entrenamiento guarda contextos de todos los largos, no sólo del largo completo.** Sin
+  los niveles cortos no hay retroceso, y sin retroceso la búsqueda ordenada se cortaba en seco
+  justo donde más falta hacía una estimación aproximada.
+- **Se agregó el piso del retroceso**: la frecuencia global de caracteres, para que ningún
+  contexto quede sin respuesta. Va **derivada** y no serializada, así los modelos guardados con
+  el formato anterior siguen cargando.
+- `distribucion` memoiza por sufijo: la búsqueda revisita los mismos contextos miles de veces.
+
+### Medido
+
+Sobre el mismo test held-out de 20.000 contraseñas, contra la misma versión sampleando:
+
+| presupuesto | muestreo | ordenado | mejora |
+|---|---|---|---|
+| 10.000 | 0.01% | 0.06% | **6x** |
+| 100.000 | 0.07% | 0.31% | **4,4x** |
+| 1.000.000 | 0.47% | 0.49% | 1,04x |
+
+A 100.000 intentos el ordenado **supera a las máscaras de hashcat** (0,31 % contra 0,30 %) y a
+10.000 empata con ellas y con `best64`. La ventaja se diluye al crecer el presupuesto: con
+suficientes extracciones el muestreo termina sacando lo mismo, sólo que más tarde.
+
+Costo: ~3.000-4.800 candidatos por segundo, 166 MB, **un núcleo de CPU y cero GPU**.
+
+Sigue sin ser suficiente para llamarlo estado del arte: a 10⁶ las máscaras y las reglas de
+hashcat encabezan la tabla, y PassGPT (0,86 %) sigue por delante de los dos Markov. El paso que
+falta —aplicar el mismo orden a la distribución del modelo neuronal— queda documentado como la
+tarea pendiente.
+
+### Corregido
+
+- **La interpolación de niveles dejaba masa sin repartir** (1 + (1-λ) + (1-λ)² … = 1/λ), así que
+  las probabilidades sumaban 1,2. Ahora se normaliza.
+- **La cota de largo máximo impedía cerrar la contraseña**: bloqueaba expandir en el largo tope,
+  así que nunca se podía agregar el marcador de fin y la enumeración no emitía nada.
+- **Un contexto sin ningún sufijo visto daba distribución vacía** y cortaba la rama. Resuelto
+  con el piso de frecuencia global.
+
+### Rendimiento (dos errores propios, encontrados al medir)
+
+- La cola se podaba **en cada iteración** una vez saturada: un ordenamiento de 200.000
+  elementos por candidato. Ahora se poda al duplicar el tope, no en cada inserción.
+- Se expandían **los 214 caracteres** del vocabulario en cada paso; ahora sólo los `ramas` más
+  probables (32), que no cambia lo que se emite primero.
+
 ## [1.2.0] — 2026-09-19
 
 Cierra el círculo de ZipCrypto: ya no sólo se ataca en local, también se puede emitir el

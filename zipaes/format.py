@@ -57,6 +57,10 @@ class NotEncryptedError(ValueError):
     """La entrada no está cifrada."""
 
 
+class UnsupportedZipError(ValueError):
+    """El contenedor usa una variante de ZIP no soportada (por ejemplo ZIP64)."""
+
+
 @dataclass
 class AesEntry:
     """Todo lo necesario para verificar o descifrar una entrada AES."""
@@ -131,6 +135,8 @@ class ArchiveReport:
     zipcrypto: list[str] = field(default_factory=list)
     plain: list[str] = field(default_factory=list)
     other_encrypted: list[str] = field(default_factory=list)
+    zipcrypto_entries: list = field(default_factory=list)
+    zip64: bool = False
 
     @property
     def encrypted(self) -> bool:
@@ -144,8 +150,42 @@ class ArchiveReport:
             "zipcrypto": len(self.zipcrypto),
             "sin_cifrar": len(self.plain),
             "otros_cifrados": len(self.other_encrypted),
+            "zip64": self.zip64,
             "primera_entrada_aes": self.aes[0].name if self.aes else None,
+            "primera_entrada_zipcrypto": self.zipcrypto[0] if self.zipcrypto else None,
         }
+
+
+#: firmas de ZIP64
+SIG_ZIP64_EOCD = 0x06064B50
+SIG_ZIP64_LOCATOR = 0x07064B50
+
+
+def detect_zip64(path: str, window: int = 4096) -> bool:
+    """Detecta ZIP64 mirando el final del archivo (EOCD64 o su localizador)."""
+    try:
+        tamano = os.path.getsize(path)
+        with open(path, "rb") as handle:
+            handle.seek(max(0, tamano - window))
+            cola = handle.read()
+    except OSError:
+        return False
+    return (
+        SIG_ZIP64_EOCD.to_bytes(4, "little") in cola
+        or SIG_ZIP64_LOCATOR.to_bytes(4, "little") in cola
+    )
+
+
+def has_zip64_extra(info: zipfile.ZipInfo) -> bool:
+    """¿La entrada declara el extra field ZIP64 (0x0001)?"""
+    offset = 0
+    extra = info.extra
+    while offset + 4 <= len(extra):
+        header_id, size = struct.unpack_from("<HH", extra, offset)
+        if header_id == 0x0001:
+            return True
+        offset += 4 + size
+    return False
 
 
 def _parse_aes_extra(extra: bytes) -> tuple[int, int, int] | None:
@@ -189,7 +229,22 @@ def parse_entry(handle, info: zipfile.ZipInfo) -> AesEntry:
         raise NotAesError(f"fuerza AES inválida: {strength}")
     salt_len = salt_len_for(strength)
 
+    # Con el bit 3 activo (data descriptor) la cabecera local deja los tamaños en cero:
+    # hay que tomarlos del directorio central.
+    if csize == 0 or usize == 0:
+        csize = csize or info.compress_size
+        usize = usize or info.file_size
+
     data_offset = info.header_offset + 30 + name_len + extra_len
+
+    # Nunca confiar en un tamaño declarado: un `compressed size` de 4 GB en un archivo de
+    # 100 bytes haría que el parser intente leerlos.
+    disponible = os.fstat(handle.fileno()).st_size - data_offset
+    if csize > disponible:
+        raise ValueError(
+            f"el tamaño declarado ({csize}) excede lo que queda del archivo ({disponible})"
+        )
+
     handle.seek(data_offset)
     blob = handle.read(csize)
     if len(blob) != csize:
@@ -217,10 +272,27 @@ def parse_entry(handle, info: zipfile.ZipInfo) -> AesEntry:
 
 
 def inspect(path: str) -> ArchiveReport:
-    """Clasifica todas las entradas de un zip: AES, ZipCrypto, planas u otras."""
+    """Clasifica todas las entradas de un zip: AES, ZipCrypto, planas u otras.
+
+    Levanta :class:`UnsupportedZipError` (un ``ValueError``) si el contenedor usa una
+    variante no soportada, en lugar de dejar escapar un ``NotImplementedError`` de la
+    biblioteca estándar.
+    """
+    from .zipcrypto import parse_zipcrypto_entry
+
     report = ArchiveReport(path=path)
-    with zipfile.ZipFile(path) as archive, open(path, "rb") as handle:
-        for info in archive.infolist():
+    report.zip64 = detect_zip64(path)
+    try:
+        archive_ctx = zipfile.ZipFile(path)
+    except NotImplementedError as exc:
+        raise UnsupportedZipError(f"variante de ZIP no soportada: {exc}") from exc
+
+    with archive_ctx as archive, open(path, "rb") as handle:
+        try:
+            infos = archive.infolist()
+        except NotImplementedError as exc:
+            raise UnsupportedZipError(f"variante de ZIP no soportada: {exc}") from exc
+        for info in infos:
             if info.is_dir():
                 continue
             report.total += 1
@@ -232,14 +304,25 @@ def inspect(path: str) -> ArchiveReport:
                 continue
             except NotAesError:
                 pass
-            # cifrado, pero no AES -> ZipCrypto tradicional (método 1)
-            if info.flag_bits & 0x1:
-                if (info.compress_type or 0) <= 1:
-                    report.zipcrypto.append(info.filename)
-                else:
-                    report.other_encrypted.append(info.filename)
-            else:
+            except Exception:  # noqa: BLE001 — una entrada rara no debe abortar el resto
+                pass
+
+            if not (info.flag_bits & 0x1):
                 report.plain.append(info.filename)
+                continue
+
+            # cifrada pero no AES -> ZipCrypto tradicional
+            try:
+                entry = parse_zipcrypto_entry(
+                    handle,
+                    info,
+                    csize=info.compress_size,
+                    usize=info.file_size,
+                )
+                report.zipcrypto_entries.append(entry)
+                report.zipcrypto.append(info.filename)
+            except Exception:  # noqa: BLE001
+                report.other_encrypted.append(info.filename)
     return report
 
 

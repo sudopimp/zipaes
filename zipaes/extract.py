@@ -100,3 +100,39 @@ def list_entries(archive_path: str) -> list[AesEntry]:
             except Exception:  # noqa: BLE001 — entradas no AES se ignoran
                 continue
         return found
+
+
+def extract_zipcrypto_entry(entry, password: str, destination: str) -> bytes:
+    """Descifra y descomprime una entrada ZipCrypto, y la escribe en disco."""
+    from .zipcrypto import decrypt
+
+    crudo = decrypt(entry, password)
+    if entry.compression == 8:
+        import zlib
+
+        crudo = zlib.decompress(crudo, -15)
+    os.makedirs(os.path.dirname(destination) or ".", exist_ok=True)
+    with open(destination, "wb") as handle:
+        handle.write(crudo)
+    return crudo
+
+
+def extract_zipcrypto_all(entries, password: str, output_dir: str) -> ExtractionResult:
+    """Extrae todas las entradas ZipCrypto de un archivo."""
+    from .zipcrypto import verify as zipcrypto_verify
+
+    result = ExtractionResult()
+    os.makedirs(output_dir, exist_ok=True)
+
+    if entries and not zipcrypto_verify(entries[0], password):
+        raise WrongPassword("la contraseña no verifica para ZipCrypto")
+
+    for entry in entries:
+        try:
+            extract_zipcrypto_entry(entry, password, safe_join(output_dir, entry.name))
+            result.written.append(entry.name)
+        except WrongPassword:
+            result.failed.append((entry.name, "contraseña incorrecta"))
+        except Exception as exc:  # noqa: BLE001
+            result.failed.append((entry.name, f"{type(exc).__name__}: {exc}"))
+    return result

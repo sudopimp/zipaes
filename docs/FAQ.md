@@ -68,3 +68,23 @@ omiten automáticamente si no está instalado.
 
 Con *issues* que describan el escenario y cómo reproducirlo, y con *pull requests* que
 incluyan tests. Para cambios de formato, agregá primero un caso de prueba que falle.
+
+### ¿Y ZipCrypto? ¿Eso no es lo mismo?
+
+No. ZipCrypto es el cifrado tradicional de PKWARE: un generador de tres claves, sin
+derivación, sin autenticación. `zipaes` lo detecta, lo verifica (por CRC del contenido, que
+es la única comprobación concluyente) y lo ataca. Como no hay que derivar claves, probarlo
+es cientos de miles de veces más barato que AES: el backend propio alcanza y sobra.
+
+### ¿Para qué sirve el modelo de Markov si ya tengo hashcat con reglas?
+
+Porque atacan cosas distintas. Las reglas y el mangleo transforman palabras que vos les das;
+el modelo aprende la distribución de un corpus y genera candidatos que no derivan de ninguna
+palabra base. Cuando tenés un corpus del entorno correcto (una filtración, contraseñas
+viejas del mismo lugar), eso llega a lugares a los que las reglas no llegan. Es la misma
+idea que `hcstat` de hashcat o que los modelos de n-gramas de la literatura de adivinación.
+
+### Lo probé con `--backend hashcat` y falla con un error de OpenCL
+
+Significa que hashcat está instalado pero no encuentra dispositivo. En una máquina sin GPU
+usá `--backend python`, que no necesita nada. `zipaes backend` te dice qué detectó.

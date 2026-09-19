@@ -57,28 +57,52 @@ zipaes hash archivo.zip > hash.txt
 hashcat -m 13600 hash.txt diccionario.txt -r rules/best64.rule
 ```
 
-`-m 13600` es WinZip. Con una GPU modesta y un diccionario público + reglas, la tasa es de
-millones de candidatos por segundo.
+`-m 13600` es WinZip AES. Con una GPU modesta y un diccionario público + reglas, la tasa es
+de millones de candidatos por segundo.
 
-**Camino lento pero correcto (CPU, sin dependencias):**
+**Dejando que zipaes lo orqueste:**
 
 ```bash
-zipaes crack archivo.zip -w diccionario.txt -j 8
+zipaes backend                                     # ¿qué hay disponible?
+zipaes crack archivo.zip -w diccionario.txt --backend hashcat
+zipaes crack archivo.zip -w diccionario.txt --backend auto     # por defecto
+```
+
+`auto` elige hashcat si está disponible — **salvo en AE-1**, donde el kernel del modo 13600
+no es fiable (§4). En ese caso usa el verificador propio.
+
+**Camino sin GPU (CPU, sin dependencias):**
+
+```bash
+zipaes crack archivo.zip -w diccionario.txt -j 8 --backend python
 ```
 
 **Antes de escalar, agotá lo obvio.** La mayoría de los casos reales no son contraseñas
 aleatorias: son variantes de algo que la persona ya usaba. Armá una lista dirigida con lo
-que sepas del contexto (nombre del proyecto, apodo, dominio, año, equipo favorito,
-fechas) y probala primero:
+que sepas del contexto (nombre del proyecto, apodo, dominio, año, equipo favorito, fechas)
+y probala primero:
 
 ```bash
 zipaes wordlist -o dirigida.txt proyecto apodo dominio 2025
-zipaes crack archivo.zip -w dirigida.txt --mutaciones
+zipaes crack archivo.zip -w dirigida.txt
 ```
 
-`--mutaciones` agrega mayúsculas, capitalización y sufijos habituales (`123`, `!`, `2025`,
-etc.). Con 100 palabras base eso son unos miles de candidatos: se prueban en segundos y
-resuelven una fracción sorprendentemente alta de los casos.
+Eso genera mangleo tipo PACK de cada palabra (mayúsculas, leet, inversión, sufijos, años) y
+composición entre ellas (`proyecto_apodo`, `apodo2025`, …).
+
+**Y si el contexto no alcanza, entrená un modelo.** Es la técnica que más rinde cuando hay
+un corpus disponible (una filtración, un diccionario público, contraseñas viejas del mismo
+entorno):
+
+```bash
+zipaes wordlist -o lista.txt --train rockyou.txt --save-model modelo.json --count 200000
+zipaes crack archivo.zip -w lista.txt --backend hashcat
+```
+
+El modelo aprende la distribución de caracteres del corpus y samplea candidatos nuevos:
+llega a lugares a los que las reglas fijas no llegan, porque no se limita a transformar
+palabras que le des. Se entrena una vez y se reutiliza (`--model modelo.json`), y la
+generación es reproducible con `--seed`.
 
 ### 4. Confirmar
 

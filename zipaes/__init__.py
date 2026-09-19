@@ -19,8 +19,17 @@ que tengas autorización explícita. Ver ``docs/ETICA-Y-LEGAL.md``.
 
 from __future__ import annotations
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
+from .candidates import (  # noqa: E402
+    MarkovModel,
+    build_candidates,
+    compose,
+    leet,
+    mangle,
+    train,
+    years,
+)
 from .crack import build_wordlist, crack, crack_entry  # noqa: E402
 from .crypto import (  # noqa: E402
     WrongPassword,
@@ -36,6 +45,7 @@ from .format import (  # noqa: E402
     ArchiveReport,
     NotAesError,
     NotEncryptedError,
+    detect_zip64,
     inspect,
     looks_like_zip,
     parse_entry,
@@ -43,6 +53,11 @@ from .format import (  # noqa: E402
 from .hashfmt import HASHCAT_MODE, emit_hash, emit_hash_line, sanity_check  # noqa: E402
 from .selftest import check_hash_format, run_selftest  # noqa: E402
 from .testkit import write_aes_zip  # noqa: E402
+from .zipcrypto import (  # noqa: E402
+    ZipCryptoEntry,
+    ZipCryptoKeys,
+    parse_zipcrypto_entry,
+)
 
 __all__ = [
     "__version__",
@@ -52,15 +67,20 @@ __all__ = [
     "inspect",
     "parse_entry",
     "looks_like_zip",
+    "detect_zip64",
     "NotAesError",
     "NotEncryptedError",
-    # cripto
+    # cripto AES
     "derive_keys",
     "keystream",
     "decrypt_ciphertext",
     "recover_plaintext",
     "verify",
     "WrongPassword",
+    # ZipCrypto
+    "ZipCryptoEntry",
+    "ZipCryptoKeys",
+    "parse_zipcrypto_entry",
     # hash
     "emit_hash",
     "emit_hash_line",
@@ -70,6 +90,14 @@ __all__ = [
     "crack",
     "crack_entry",
     "build_wordlist",
+    # candidatos
+    "MarkovModel",
+    "train",
+    "mangle",
+    "leet",
+    "compose",
+    "years",
+    "build_candidates",
     # extraccion
     "extract_all",
     "extract_entry",

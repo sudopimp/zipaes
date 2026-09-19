@@ -2,14 +2,14 @@
 
 # zipaes
 
-**Auditoría, recuperación y extracción de archivos ZIP con cifrado AES (WinZip AE-1 / AE-2).**
+**Auditoría, recuperación y extracción de archivos ZIP cifrados.**
 
-Lo que `unzip` y la biblioteca estándar de Python **no** pueden abrir.
+AES (WinZip AE-1 / AE-2) y ZipCrypto, con hashcat y John the Ripper integrados.
 
 [![CI](https://github.com/sudopimp/zipaes/actions/workflows/ci.yml/badge.svg)](https://github.com/sudopimp/zipaes/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![Licencia](https://img.shields.io/badge/licencia-MIT-green)
-![Tests](https://img.shields.io/badge/tests-98-brightgreen)
+![Tests](https://img.shields.io/badge/tests-182-brightgreen)
 
 </div>
 
@@ -17,8 +17,7 @@ Lo que `unzip` y la biblioteca estándar de Python **no** pueden abrir.
 
 ## El problema
 
-Un zip con cifrado AES (el que produce WinZip, 7-Zip con `-mem=AES256`, WinRAR y varias
-herramientas más) es un archivo que buena parte del ecosistema simplemente no sabe leer:
+Un zip cifrado es un archivo que buena parte del ecosistema no sabe leer:
 
 ```console
 $ unzip importante.zip
@@ -32,9 +31,9 @@ RuntimeError: File 'documentos/nota.txt' is encrypted, password required for ext
 ```
 
 El **método 99** es la marca del cifrado AES, y ni Info-ZIP ni `zipfile` lo implementan.
-7-Zip sí puede extraerlo, pero no te da lo que hace falta para *recuperar* la contraseña
-cuando no la tenés: el hash para las herramientas de cracking, una verificación
-concluyente, ni un flujo reproducible.
+Y cuando la contraseña se perdió, 7-Zip puede extraer pero no te da lo que hace falta para
+*recuperarla*: el hash para las herramientas de cracking, una verificación concluyente y
+un flujo reproducible.
 
 Eso es lo que cubre `zipaes`.
 
@@ -44,12 +43,13 @@ Eso es lo que cubre `zipaes`.
 
 | Comando | Para qué |
 |---|---|
-| `zipaes info` | Panorama del archivo: cuántas entradas, con qué cifrado, y los campos AES de cada una |
-| `zipaes verify` | Comprueba una contraseña de forma **concluyente** (recalcula el código de autenticación) |
+| `zipaes info` | Panorama del archivo: tipo de cifrado, entradas, campos AES, ZIP64 |
+| `zipaes verify` | Comprueba una contraseña de forma **concluyente** (auth code en AES, CRC en ZipCrypto) |
 | `zipaes hash` | Emite el hash `$zip2$` para **hashcat** (modo 13600) o **John the Ripper** |
-| `zipaes crack` | Ataque de diccionario en paralelo con el verificador propio |
-| `zipaes extract` | Descifra y extrae el contenido una vez que tenés la contraseña |
-| `zipaes wordlist` | Genera listas de candidatos (mayúsculas, capitalización, sufijos, años) |
+| `zipaes crack` | Ataque de diccionario, en local o **delegando en hashcat/John** |
+| `zipaes extract` | Descifra y extrae el contenido (AES y ZipCrypto) |
+| `zipaes wordlist` | Genera candidatos: mangleo tipo PACK, composición y **modelo de Markov** |
+| `zipaes backend` | Muestra las herramientas externas detectadas y sus versiones |
 | `zipaes selftest` | Se autocomprueba de punta a punta contra un archivo de contraseña conocida |
 
 Todos aceptan `--json`.
@@ -65,13 +65,14 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 ```
 
-La única dependencia es `cryptography`. Nada más.
+La única dependencia obligatoria es `cryptography`. `hashcat` y `john` son opcionales y se
+detectan solos (PATH, variable `HASHCAT`/`JOHN`, o ubicaciones habituales).
 
 ---
 
 ## Autocomprobación
 
-Antes de tocar cualquier archivo real, comprobá que el flujo funciona en tu máquina:
+Antes de tocar cualquier archivo real:
 
 ```console
 $ zipaes selftest
@@ -103,42 +104,52 @@ entradas: 2
 aes: 2
 zipcrypto: 0
 sin_cifrar: 0
-primera_entrada_aes: documentos/nota.txt
+zip64: no
+tipo: AES
 detalle:
   - nombre=documentos/nota.txt, formato=AE-2, fuerza=AES-256,
     salt=f781667b0d30116f6f3bbcf27b3a15e1, verificacion_clave=77f0,
     auth_code=fdd67ae8744acdb6ec39, comprimido=32, sin_comprimir=4, metodo_real=0
 ```
 
-Si el archivo usara cifrado tradicional (**ZipCrypto**), el comando lo dice y te manda al
-modo correcto de hashcat en lugar de dejarte probando al azar.
+### 2. Atacar
 
-### 2. Emitir el hash y atacar por GPU
-
-```console
-$ zipaes hash importante.zip
-importante.zip:$zip2$*0*3*0*f781667b0d30116f6f3bbcf27b3a15e1*77f0*4*7da59a4d*fdd67ae8744acdb6ec39*$/zip2$
-```
+**Con GPU** (recomendado en cualquier caso serio):
 
 ```bash
-hashcat -m 13600 hash.txt rockyou.txt -r rules/best64.rule
+zipaes hash importante.zip > hash.txt
+hashcat -m 13600 hash.txt diccionario.txt -r rules/best64.rule
 ```
 
-### 3. Confirmar el resultado
+O dejando que `zipaes` orqueste hashcat por vos:
 
-Un candidato de hashcat **no es prueba suficiente**. Confirmalo con la verificación real:
+```bash
+zipaes crack importante.zip -w diccionario.txt --backend hashcat
+```
+
+Sin GPU, con el verificador propio:
+
+```bash
+zipaes crack importante.zip -w diccionario.txt -j 8 --backend python
+```
+
+Con `--backend auto` (por defecto) se elige hashcat si está disponible — **salvo en AE-1**,
+donde el kernel de hashcat no es fiable por una limitación de 16 bits que se explica más
+abajo. En ese caso, y con hashcat ausente, cae al verificador propio.
+
+### 3. Confirmar
 
 ```console
 $ zipaes verify importante.zip -p la-clave-encontrada
-archivo: importante.zip
-entrada: documentos/nota.txt
+tipo: AES
 valida: si
 
 $ zipaes verify importante.zip -p una-clave-cualquiera
 valida: no
 ```
 
-Código de salida `0` si la contraseña es correcta, `2` si no.
+Código de salida `0` si la contraseña es correcta, `2` si no. **No te saltees este paso**:
+lo que reporta hashcat se confirma acá.
 
 ### 4. Extraer
 
@@ -149,72 +160,114 @@ fallidos: 0
 omitidos: 0
 ```
 
-### Sin GPU (diccionario propio)
+---
 
-```console
-$ zipaes crack importante.zip --palabras alfa beta mi-clave
-entrada: documentos/nota.txt
-encontrada: si
-password: mi-clave
+## Candidatos: la parte que decide el resultado
+
+El formato correcto no recupera contraseñas; el **diccionario** sí. `zipaes wordlist`
+combina tres estrategias, de más barata a más cara:
+
+```bash
+# 1. dirigida: mangleo PACK de palabras del contexto + composición entre ellas
+zipaes wordlist -o lista.txt juan perez 2025
+
+# 2. con modelo de Markov entrenado sobre un corpus propio
+zipaes wordlist -o lista.txt --train rockyou.txt --save-model modelo.json --count 200000
+
+# 3. reutilizando un modelo ya entrenado (entrenar una vez, usar mil)
+zipaes wordlist -o lista.txt --model modelo.json --count 500000 --seed 42
 ```
 
-Con `--mutaciones` prueba variantes de cada palabra; con `-w lista.txt` usa un diccionario;
-con `-j N` fija la cantidad de procesos.
+| Estrategia | Qué hace |
+|---|---|
+| **Mangleo (PACK)** | mayúsculas, leet, inversión, duplicación, sufijos, años, prefijos |
+| **Composición (PRINCE)** | `juan` + `perez` → `juanperez`, `perez_juan`, `juan2025`… |
+| **Modelo de Markov** | aprende la distribución de caracteres de un corpus y samplea candidatos nuevos |
+
+El modelo es la misma idea que `hcstat` de hashcat y que los modelos de n-gramas de la
+literatura de adivinación: la contraseña tiene estructura, y esa estructura se puede
+aprender. Se entrena una vez y se guarda en JSON; la generación es reproducible con `--seed`.
+
+Nada de esto recupera una contraseña aleatoria de 20 caracteres. Contra eso no hay
+estrategia que sirva: es matemática, no perseverancia.
 
 ---
 
-## Cómo funciona
+## Cifrado tradicional (ZipCrypto)
 
-El cifrado AES de WinZip se define en el APPNOTE de PKWARE y en la especificación pública
-de WinZip. En resumen:
+Además de AES, `zipaes` detecta y **ataca ZipCrypto**, el cifrado clásico de PKWARE:
+
+```console
+$ zipaes info clasico.zip
+tipo: ZIPCRYPTO
+detalle:
+  - nombre=secreto.txt, formato=ZipCrypto, flags=0x0009, data_descriptor=True,
+    metodo_real=0, crc=af1b45f9, cifrado=40, sin_comprimir=28
+
+$ zipaes crack clasico.zip --palabras alfa clave-zip
+tipo: ZIPCRYPTO
+backend: python-zipcrypto
+encontrada: si
+password: clave-zip
+
+$ zipaes extract clasico.zip -p clave-zip -o salida/
+extraidos: 1
+```
+
+ZipCrypto no es AES: usa un generador de 3 claves de 32 bits, **sin derivación de claves**.
+Por eso probarlo es órdenes de magnitud más barato y no hace falta GPU: el ataque propio
+corre a cientos de miles de candidatos por segundo. Su verificación es concluyente igual:
+se descifra el contenido y se compara el CRC, no el byte de control de la cabecera (que
+deja pasar uno de cada 256 falsos positivos).
+
+Detalle del formato en [`docs/FORMATO.md`](docs/FORMATO.md).
+
+---
+
+## Cómo funciona (AES)
 
 ```
 DK         = PBKDF2-HMAC-SHA1(contraseña, salt, 1000 iteraciones, 2*clave + pv)
 clave_aes  = DK[0 : clave]
 clave_mac  = DK[clave : 2*clave]
-pv         = DK[2*clave : 2*clave + pv]        # valor de verificación de clave
+pv         = DK[2*clave : 2*clave + pv]
 
 ciphertext = AES-CTR(clave_aes, datos)         # contador little-endian, arranca en 1
 auth_code  = HMAC-SHA1(clave_mac, ciphertext)[:10]
 ```
 
-En el archivo, cada entrada queda guardada así:
-
-```
-[salt: 8/12/16 bytes][pv: 1 o 2 bytes][ciphertext][auth_code: 10 bytes]
-```
+En el archivo: `[salt: 8/12/16][pv: 1 o 2][ciphertext][auth_code: 10]`.
 
 Tres detalles que suelen arruinar implementaciones:
 
 1. **El `pv` no alcanza como verificación.** En AE-1 mide **1 byte**: uno de cada 256
-   candidatos falsos lo supera por azar. La prueba real es recalcular el `auth_code`.
-   `zipaes verify` hace siempre las dos cosas.
-2. **El contador del CTR es little-endian.** No sirve el modo CTR estándar de las
-   bibliotecas criptográficas, que usa un contador big-endian sobre los 128 bits. Hay que
-   construir el keystream bloque a bloque.
-3. **El salt no siempre mide 16 bytes.** Mide `4 + 4*fuerza`: 8 (AES-128), 12 (AES-192),
-   16 (AES-256). Asumir 16 es un error silencioso que sólo aparece con AES-128/192.
+   candidatos falsos lo supera. La prueba real es recalcular el `auth_code`.
+2. **El contador del CTR es little-endian.** El modo CTR estándar de las bibliotecas usa un
+   contador big-endian sobre los 128 bits: no sirve. Hay que construir el keystream bloque
+   a bloque.
+3. **El salt no siempre mide 16 bytes.** Mide `4 + 4*fuerza`: 8, 12 o 16. Asumir 16 es un
+   error silencioso que sólo aparece con AES-128/192.
 
-Todo esto está implementado y cubierto por tests en `zipaes/format.py` y
-`zipaes/crypto.py`. El detalle completo, en [`docs/FORMATO.md`](docs/FORMATO.md).
+Todo está implementado y cubierto por tests en `zipaes/format.py` y `zipaes/crypto.py`.
+El detalle completo, en [`docs/FORMATO.md`](docs/FORMATO.md).
 
 ---
 
-## El flujo recomendado de recuperación
+## El flujo recomendado
 
 ```
-1. zipaes info archivo.zip          # ¿es AES? ¿qué variante y fuerza?
-2. zipaes selftest                  # ¿el flujo funciona en esta máquina?
-3. zipaes hash archivo.zip          # hash -> hashcat -m 13600 / john
-4. zipaes verify archivo.zip -p ... # confirmar el candidato (concluyente)
-5. zipaes extract archivo.zip -p ... -o salida/
+1. zipaes backend                    # ¿hay hashcat? ¿hay john?
+2. zipaes info archivo.zip           # ¿AES o ZipCrypto? ¿variante y fuerza?
+3. zipaes selftest                   # ¿el flujo funciona en esta máquina?
+4. zipaes wordlist ...               # lista dirigida + modelo
+5. zipaes crack archivo.zip -w ...   # o hashcat -m 13600 con el hash de `zipaes hash`
+6. zipaes verify archivo.zip -p ...  # confirmar el candidato (concluyente)
+7. zipaes extract archivo.zip -p ... -o salida/
 ```
 
-**El paso 2 no es ceremonia.** Un hash mal formado no falla de forma visible: simplemente
+**El paso 3 no es ceremonia.** Un hash mal formado no falla de forma visible: simplemente
 no encuentra nada, y podés dejar la GPU trabajando horas contra un problema imposible.
-Validar el emisor contra un archivo de contraseña conocida *antes* de atacar es la
-diferencia entre una tarde y una semana. En
-[`docs/METODOLOGIA.md`](docs/METODOLOGIA.md) está el razonamiento completo.
+En [`docs/METODOLOGIA.md`](docs/METODOLOGIA.md) está el razonamiento completo.
 
 ---
 
@@ -223,15 +276,16 @@ diferencia entre una tarde y una semana. En
 - **AE-1 y hashcat.** El campo del `pv` en el hash `$zip2$` se compara a 16 bits en el
   kernel de hashcat (modo 13600). Un archivo AE-1 guarda un solo byte de verificación, así
   que **el ataque por GPU puede no encontrarlo**. Para AE-1 usá `zipaes crack`, que no
-  depende del largo del `pv`. `zipaes hash --avisos` te lo recuerda.
-- **ZipCrypto (cifrado tradicional) no está soportado.** No es AES: usá hashcat
-  `--mode 17200`. El CLI te lo indica.
-- **Sin ZIP64, sin multi-volumen, sin data descriptor.** Cubre el caso habitual; los
-  archivos >4 GB o partidos en volúmenes quedan fuera.
+  depende del largo del `pv`, y `--backend auto` ya lo elige. `zipaes hash --avisos` te lo
+  recuerda.
+- **ZipCrypto no emite hash `$zip2$** (es el formato de AES). Se ataca con el backend
+  propio; el CLI te lo explica si pedís `hash` sobre un archivo ZipCrypto.
+- **ZIP64**: se detecta e informa, pero el soporte es parcial (archivos >4 GB o muchos
+  miles de entradas pueden fallar). Los archivos multi-volumen quedan fuera.
 - **No hace fuerza bruta.** No adivina: prueba candidatos que le des, o delega el trabajo
   pesado a hashcat/John y confirma el resultado.
 - **No rompe el cifrado.** AES-256 con una contraseña fuerte sigue siendo AES-256 con una
-  contraseña fuerte. Lo que este proyecto aporta es formato, verificación y flujo.
+  contraseña fuerte.
 
 ---
 
@@ -257,16 +311,19 @@ Leé [`docs/ETICA-Y-LEGAL.md`](docs/ETICA-Y-LEGAL.md) para el detalle.
 
 ```
 zipaes/
-  format.py     parseo del contenedor ZIP y de las entradas AES
-  crypto.py     derivación de claves, keystream, verificación, descifrado
-  hashfmt.py    emisión del hash $zip2$ para hashcat / John
-  crack.py      ataque de diccionario en paralelo y generación de candidatos
-  extract.py    extracción segura (sin escapes de ruta)
-  selftest.py   autocomprobación de punta a punta
-  testkit.py    escritor de zips AES para fixtures de prueba
-  cli.py        interfaz de línea de comandos
-tests/          98 pruebas con pytest, incluidas las de interoperabilidad con 7-Zip
-docs/           metodología, formato, ética y preguntas frecuentes
+  format.py      contenedor ZIP, entradas AES y ZipCrypto, ZIP64, data descriptor
+  crypto.py      derivación de claves AES, keystream, verificación, descifrado
+  zipcrypto.py   cifrado tradicional de PKWARE: claves, verificación, ataque
+  hashfmt.py     emisión del hash $zip2$ para hashcat / John
+  backend.py     detección y orquestación de hashcat y John the Ripper
+  candidates.py  mangleo PACK, composición PRINCE y modelo de Markov
+  crack.py       ataque de diccionario propio (el camino correcto para AE-1)
+  extract.py     extracción segura (sin escapes de ruta) para AES y ZipCrypto
+  selftest.py    autocomprobación de punta a punta
+  testkit.py     escritor de zips AES para fixtures de prueba
+  cli.py         interfaz de línea de comandos
+tests/           182 pruebas con pytest
+docs/            metodología, formato, ética y preguntas frecuentes
 ```
 
 ## Calidad
@@ -275,16 +332,20 @@ docs/           metodología, formato, ética y preguntas frecuentes
 make check    # ruff check + ruff format --check + pytest
 ```
 
-- **98 tests**, todos en verde, sin red ni servicios externos.
-- Las pruebas de interoperabilidad **crean archivos con 7-Zip y los abren con este
-  paquete**, y al revés: si 7-Zip acepta lo que escribimos, el formato está bien construido.
-- `ruff` limpio.
-- CI en Python 3.11, 3.12 y 3.13.
+- **182 tests**, todos en verde, sin red ni servicios externos.
+- **Interoperabilidad real**: las pruebas crean archivos con **7-Zip** y con **Info-ZIP** y
+  los abren con este paquete, y verifican que 7-Zip acepte lo que el kit de pruebas escribe.
+  No se valida contra sí mismo.
+- **Fuzzing del parser**: 300 mutaciones deterministas por formato (bit flips, truncados,
+  tamaños absurdos) que exigen que el parser no reviente con excepciones que delaten un
+  descuido, y que respete los invariantes del formato cuando el parseo tiene éxito.
+- **Integración real con hashcat**: se activa sola si el binario está presente.
+- `ruff` limpio. CI en Python 3.11/3.12/3.13 más macOS y Windows.
 
 ## Documentación
 
 - [Metodología de recuperación](docs/METODOLOGIA.md) — el orden correcto y por qué
-- [El formato AES de ZIP, en detalle](docs/FORMATO.md) — especificación, `$zip2$`, trampas
+- [El formato, en detalle](docs/FORMATO.md) — AES y ZipCrypto, `$zip2$`, trampas
 - [Ética y marco legal](docs/ETICA-Y-LEGAL.md) — uso aceptable
 - [Preguntas frecuentes](docs/FAQ.md)
 
@@ -295,6 +356,6 @@ MIT. Ver [`LICENSE`](LICENSE).
 ## Agradecimientos
 
 A los proyectos que hacen el trabajo pesado cuando la contraseña resiste:
-[hashcat](https://hashcat.net/hashcat/), [John the Ripper](https://www.openwall.com/john/)
-y [7-Zip](https://www.7-zip.org/). El formato está documentado en el APPNOTE de PKWARE y
-en la [especificación AES de WinZip](https://www.winzip.com/en/support/aes-encryption/).
+[hashcat](https://hashcat.net/hashcat/), [John the Ripper](https://www.openwall.com/john/),
+[7-Zip](https://www.7-zip.org/) e Info-ZIP. El formato está documentado en el APPNOTE de
+PKWARE y en la [especificación AES de WinZip](https://www.winzip.com/en/support/aes-encryption/).

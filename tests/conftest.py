@@ -140,6 +140,46 @@ def tiene_7z() -> bool:
     return shutil.which("7z") is not None
 
 
+@pytest.fixture(scope="session")
+def tiene_zip() -> bool:
+    """Info-ZIP escribe ZipCrypto, así que sirve para fixtures reales."""
+    return shutil.which("zip") is not None
+
+
+@pytest.fixture
+def zip_zipcrypto_real(tmp_path, tiene_zip):
+    """Zip con cifrado tradicional creado por Info-ZIP (store)."""
+    if not tiene_zip:
+        pytest.skip("el binario zip de Info-ZIP no está instalado")
+    destino = tmp_path / "zc_real.zip"
+    secreto = tmp_path / "secreto.txt"
+    secreto.write_text("contenido secreto de prueba\n", encoding="utf-8")
+    subprocess.run(
+        ["zip", "-q", "-j", f"-P{PASSWORD}", str(destino), str(secreto)],
+        check=True,
+        capture_output=True,
+        cwd=tmp_path,
+    )
+    return str(destino)
+
+
+@pytest.fixture
+def zip_zipcrypto_deflate(tmp_path, tiene_zip):
+    """Zip ZipCrypto comprimido con deflate."""
+    if not tiene_zip:
+        pytest.skip("el binario zip de Info-ZIP no está instalado")
+    destino = tmp_path / "zc_deflate.zip"
+    origen = tmp_path / "grande.txt"
+    origen.write_text("contenido repetitivo " * 200 + "\n", encoding="utf-8")
+    subprocess.run(
+        ["zip", "-q", "-9", "-j", f"-P{PASSWORD}", str(destino), str(origen)],
+        check=True,
+        capture_output=True,
+        cwd=tmp_path,
+    )
+    return str(destino)
+
+
 @pytest.fixture
 def zip_de_7z(tmp_path, tiene_7z):
     """Zip AES creado por 7-Zip, para probar interoperabilidad real."""

@@ -134,12 +134,26 @@ def test_zip_sin_cifrar_avisa(zip_sin_cifrar, capsys):
     assert "no esta cifrado" in capsys.readouterr().err
 
 
-def test_zip_zipcrypto_avisa_que_no_es_aes(zip_zipcrypto, capsys):
-    """ZipCrypto tradicional: hay que avisar que no es AES."""
-    assert main(["info", zip_zipcrypto]) == 1
+def test_zip_zipcrypto_se_informa_como_tal(zip_zipcrypto, capsys):
+    """ZipCrypto ya no es un caso derivado: se informa y se puede atacar."""
+    assert main(["info", zip_zipcrypto]) == 0
+    salida = capsys.readouterr().out
+    assert "tipo: ZIPCRYPTO" in salida
+    assert "formato=ZipCrypto" in salida
+
+
+def test_hash_sobre_zipcrypto_deriva_a_hashcat(zip_zipcrypto, capsys):
+    """El formato $zip2$ es de AES; para ZipCrypto se explica el camino correcto."""
+    assert main(["hash", zip_zipcrypto]) == 1
     error = capsys.readouterr().err
-    assert "ZipCrypto" in error
     assert "17200" in error
+    assert "zipaes crack" in error
+
+
+def test_backend_lista_las_herramientas(capsys):
+    assert main(["backend"]) == 0
+    salida = capsys.readouterr().out
+    assert "disponibles" in salida or "ausentes" in salida
 
 
 def test_zip_zipcrypto_se_clasifica_como_tal(zip_zipcrypto):

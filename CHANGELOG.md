@@ -3,6 +3,52 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado según [SemVer](https://semver.org/lang/es/).
 
+## [1.1.0] — 2026-09-19
+
+Cierra las cuatro brechas identificadas en la revisión de 1.0.0: soporte de ZipCrypto,
+backend de GPU, generación de candidatos con modelo y robustez del parser.
+
+### Agregado
+
+- **Soporte completo de ZipCrypto** (cifrado tradicional de PKWARE): derivación de claves,
+  descifrado con avance de estado por la cabecera de cifrado, verificación concluyente por
+  CRC, ataque de diccionario (sin derivación de claves, cientos de miles de candidatos por
+  segundo) y extracción. Antes sólo se detectaba y se derivaba a hashcat.
+- **Orquestación de backends externos** (`backend.py`): detección de hashcat y John the
+  Ripper (PATH, variables `HASHCAT`/`JOHN`, globs y rutas habituales), ataque delegado,
+  lectura de potfile y errores claros cuando faltan. `--backend auto|hashcat|john|python`.
+- **Generación de candidatos** (`candidates.py`): mangleo estructural estilo PACK,
+  composición estilo PRINCE y **modelo de Markov** entrenable sobre un corpus, con guardado
+  y carga en JSON y generación reproducible por semilla.
+- **Escritura de ZipCrypto** en el kit de pruebas, y fixtures reales generadas con Info-ZIP.
+- **Fuzzing del parser**: mutaciones deterministas sobre los tres formatos, con invariantes
+  verificados cuando el parseo tiene éxito.
+- Comando `zipaes backend` y `--json` en todos los comandos.
+
+### Cambiado
+
+- `inspect()` ahora devuelve las entradas ZipCrypto parseadas, no sólo sus nombres.
+- La elección automática de backend **no elige hashcat en AE-1**, por la limitación de 16
+  bits del kernel del modo 13600.
+- `_load_target` del CLI unifica AES y ZipCrypto: `info`, `verify`, `crack` y `extract`
+  funcionan igual con los dos.
+- El código de candidatos se centralizó en `candidates.py`; `crack.py` ya no duplica la
+  lógica de mutaciones.
+
+### Corregido
+
+- **El parser confiaba en el `compressed size` declarado.** Un campo manipulado con 4 GB
+  hacía que intentara leerlos. Ahora el tamaño se valida contra lo que queda del archivo.
+- **`zipfile` puede levantar `NotImplementedError`** ante versiones de contenedor inválidas;
+  `inspect()` lo traduce a `UnsupportedZipError` (un `ValueError`).
+- **La detección de hashcat usaba `Path.home()`**, que lee `HOME` y falla en entornos donde
+  está redefinido. Ahora el directorio personal se obtiene de la base de usuarios del
+  sistema (`pwd`), y la búsqueda incluye globs.
+- La actualización CRC-32 de ZipCrypto usa la tabla cruda de PKWARE y no `zlib.crc32`, que
+  aplica el acondicionamiento del CRC estándar y produce claves distintas.
+- El descifrado de ZipCrypto consume la cabecera de 12 bytes antes de los datos: sin eso la
+  salida era basura aunque el chequeo de cabecera diera bien.
+
 ## [1.0.0] — 2026-09-19
 
 Primera versión estable.

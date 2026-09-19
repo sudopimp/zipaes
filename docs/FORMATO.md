@@ -176,13 +176,70 @@ producir un hash que no valida. Ante la duda, comparar contra la verificación p
 
 ---
 
-## 7. ZipCrypto no es AES
+## 7. ZipCrypto: el cifrado tradicional
 
-El cifrado tradicional de PKWARE (`ZipCrypto`) usa un PRNG propio, no AES. Se reconoce por
-método 1 y bit de cifrado activo, **sin** extra field `0x9901`. Es mucho más débil, pero es
-otro formato y otro hash: hashcat `--mode 17200`, John `$pkzip2$`.
+El cifrado clásico de PKWARE (`ZipCrypto`) no tiene nada que ver con AES. Se reconoce por
+método 1 y bit de cifrado activo, **sin** extra field `0x9901`.
 
-`zipaes info` distingue los dos casos y te dice a qué modo ir.
+### Cómo funciona
+
+Tres claves de 32 bits que evolucionan con cada byte:
+
+```
+key0 = 0x12345678, key1 = 0x23456789, key2 = 0x34567890
+
+update(byte):
+    key0 = crc32_crudo(key0, byte)
+    key1 = (key1 + (key0 & 0xff)) * 134775813 + 1        (mod 2^32)
+    key2 = crc32_crudo(key2, byte alto de key1)
+
+keystream_byte():
+    temp = (key2 | 2) & 0xffff
+    return ((temp * (temp ^ 1)) >> 8) & 0xff
+```
+
+Dos detalles que rompen implementaciones:
+
+1. **`crc32_crudo` no es `zlib.crc32`.** La actualización de PKWARE es
+   `(crc >> 8) ^ tabla[(crc ^ byte) & 0xff]`, sin el acondicionamiento previo y posterior
+   del CRC estándar. `zlib.crc32(un_byte, anterior)` da otro valor y produce claves
+   distintas: hay que construir la tabla explícitamente.
+2. **El estado avanza con la cabecera.** El archivo arranca con 12 bytes de cabecera de
+   cifrado. Hay que consumirlos (descifrarlos) para avanzar las claves **antes** de
+   descifrar los datos. Si se empieza de cero en los datos, la salida es basura aunque el
+   chequeo de la cabecera dé bien.
+
+### Estructura
+
+```
+[cabecera de cifrado: 12 bytes][datos cifrados]
+```
+
+El último byte de la cabecera (en claro) es el valor de control:
+
+| Bit 3 de los flags | Byte esperado |
+|---|---|
+| 0 (normal) | byte alto del CRC |
+| 1 (data descriptor) | byte alto de la hora DOS |
+
+### Verificación
+
+El valor de control es **1 byte**: deja pasar uno de cada 256 candidatos falsos. La
+verificación concluyente es descifrar el contenido, descomprimirlo y comparar el CRC-32.
+Eso es lo que hace `zipaes verify`.
+
+### Data descriptor
+
+Cuando el bit 3 está activo, la cabecera local deja los tamaños en cero y los pone un
+registro *después* de los datos. La consecuencia práctica es que **los tamaños hay que
+tomarlos del directorio central**, no de la cabecera local. Info-ZIP usa este modo por
+defecto, así que no es un caso raro.
+
+### Qué NO es
+
+No es AES, así que el hash `$zip2$` no aplica: hashcat lo ataca con `--mode 17200`. Y como
+no hay derivación de claves, probarlo es muchísimo más barato — en la práctica el backend
+propio alcanza y sobra para este formato.
 
 ---
 
